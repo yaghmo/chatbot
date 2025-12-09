@@ -1,12 +1,6 @@
 {  
-    "Mistral-7B-gpu":
-        {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","framework":"ctransformers","max_tokens":4096, "purpose": "Fast model, runs on GPU but also requires CPU."},
-    "Mistral-7B-cpu":
-        {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","framework":"llama","max_tokens":4096, "purpose": "Slower model, runs on CPU."},
-    "chkoupi":
-        {"url": "RedHatAI/Mistral-7B-Instruct-v0.3-GPTQ-4bit","framework":"GPU","max_tokens":4096, "purpose": "This one is fast too, GPU."},
-    "sd":
-        {"url": "RedHatAI/Mistral-7B-Instruct-v0.3-GPTQ-4bit","framework":"GPU","max_tokens":4096, "purpose": "Same thing, GPU."},
-    "asfd":
-        {"url": "RedHatAI/Mistral-7B-Instruct-v0.3-GPTQ-4bit","framework":"GPU","max_tokens":4096, "purpose": "Even this one YEP, GPU."}
+    "Mistral-7B-v0.2-gpu":
+        {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","origin":"mistralai/Mistral-7B-Instruct-v0.2","type":"mistral","device": "hybrid","framework":"ctransformers","context_length":4096, "purpose": "Fast model, runs on GPU but also requires CPU."},
+    "Mistral-7B-v0.2-cpu":
+        {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","origin":"mistralai/Mistral-7B-Instruct-v0.2","type":"mistral","device": "cpu","framework":"ctransformers","context_length":4096, "purpose": "Slower version of Mistral-7B-v0.2, runs on CPU."}
     }

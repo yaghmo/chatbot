@@ -19,7 +19,7 @@ class SidebarManager:
         if "top_p" not in st.session_state:
             st.session_state.top_p = 1.0
         if "max_tokens" not in st.session_state:
-            st.session_state.max_tokens = 1024
+            st.session_state.max_tokens = 256
 
         if "model_cfg" not in st.session_state:
             with open(cfg_file, "r", encoding="utf-8") as f:

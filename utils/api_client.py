@@ -1,30 +1,11 @@
 import requests 
+import streamlit as st
 import json
 
 API_BASE_URL = "http://localhost:8000"
 
 class APIClient:
     """Client for communicating with FastAPI backend"""
-    
-    # @staticmethod
-    # def get_models():
-    #     try:
-    #         response = requests.get(f"{API_BASE_URL}/models")
-    #         response.raise_for_status()
-    #         return response.json()
-    #     except requests.exceptions.RequestException as e:
-    #         st.error(f"Failed to fetch models: {e}")
-    #         return {"models": [], "active_model": None}
-    
-    # @staticmethod
-    # def get_model_info(model_name: str):
-    #     try:
-    #         response = requests.get(f"{API_BASE_URL}/models/{model_name}")
-    #         response.raise_for_status()
-    #         return response.json()
-    #     except requests.exceptions.RequestException as e:
-    #         st.error(f"Failed to get model info: {e}")
-    #         return None
     
     @staticmethod
     def load_model(model_name: str):
@@ -72,16 +53,3 @@ class APIClient:
         except requests.exceptions.RequestException as e:
             error_detail = e.response.json().get("detail") if e.response else str(e)
             st.error(f"Failed to generate: {error_detail}")
-    
-    # @staticmethod
-    # def count_tokens(model_name: str, text: str):
-    #     try:
-    #         response = requests.post(
-    #             f"{API_BASE_URL}/tokenize",
-    #             json={"model_name": model_name, "text": text}
-    #         )
-    #         response.raise_for_status()
-    #         return response.json()["token_count"]
-    #     except requests.exceptions.RequestException as e:
-    #         st.error(f"Failed to count tokens: {e}")
-    #         return 0

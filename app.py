@@ -199,7 +199,7 @@ class ChatInterface:
             self._update_existing_chat()
         else:
             self._create_new_chat()
-\
+            
         with st.chat_message("user"):
             st.markdown(prompt)
 
@@ -288,14 +288,6 @@ class ChatbotApp:
 
         self.sidebar.render()
         self.chat.render()
-
-        # # Debug info
-        # st.markdown(
-        #     f"Debug: temp={st.session_state.temperature}, "
-        #     f"top_p={st.session_state.top_p}, "
-        #     f"max_tokens={st.session_state.max_tokens}, "
-        #     f"model={st.session_state.active_model_name}"
-        # )
 
 if __name__ == "__main__":
     app = ChatbotApp()

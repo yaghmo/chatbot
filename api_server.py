@@ -73,16 +73,6 @@ class GenerateRequest(BaseModel):
     top_p: float = 1.0
     stream: bool = True
 
-class TokenCountRequest(BaseModel):
-    model_name: str
-    text: str
-
-class ModelInfoResponse(BaseModel):
-    model_name: str
-    loaded: bool
-    context_length: Optional[int] = None
-    purpose: Optional[str] = None
-
 class GenerateResponse(BaseModel):
     response: str
     tokens_used: int
@@ -97,42 +87,6 @@ async def startup_event():
         logger.error(f"Startup failed: {e}")
         logger.error(traceback.format_exc())
 
-@app.get("/models")
-async def list_models():
-    """Get list of available models"""
-    try:
-        return {
-            "models": list(model_manager.model_cfg.keys()),
-            "active_model": model_manager.active_model_name
-        }
-    except Exception as e:
-        logger.error(f"Error listing models: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/models/{model_name}")
-async def get_model_info(model_name: str):
-    """Get information about a specific model"""
-    try:
-        if model_name not in model_manager.model_cfg:
-            raise HTTPException(status_code=404, detail="Model not found")
-        
-        cfg = model_manager.model_cfg[model_name]
-        is_loaded = (model_name in model_manager.models and 
-                     model_manager.models[model_name]._model is not None)
-        
-        return ModelInfoResponse(
-            model_name=model_name,
-            loaded=is_loaded,
-            context_length=cfg.get("context_length"),
-            purpose=cfg.get("purpose")
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting model info: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/models/load")
 async def load_model(request: LoadModelRequest):
@@ -222,24 +176,6 @@ async def load_model(request: LoadModelRequest):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=error_msg)
 
-@app.post("/models/unload/{model_name}")
-async def unload_model(model_name: str):
-    """Unload a model from memory"""
-    try:
-        if model_name in model_manager.models:
-            model_manager.models[model_name].unload()
-            if model_manager.active_model_name == model_name:
-                model_manager.active_model_name = None
-            logger.info(f"Unloaded model: {model_name}")
-            return {"status": "success", "message": f"Model {model_name} unloaded"}
-        
-        raise HTTPException(status_code=404, detail="Model not loaded")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error unloading model: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate/stream")
 async def generate_stream(request: GenerateRequest):
@@ -263,8 +199,7 @@ async def generate_stream(request: GenerateRequest):
                     temperature=request.temperature,
                     top_p=request.top_p,
                 ):
-
-                    yield f"data: {json.dumps({'token': token})}\n\n"
+                    yield f"data: {json.dumps({'token': token})}\n\n" if model_manager.model_cfg[model_manager.active_model_name]["framework"] != "llama" else f"data: {json.dumps({'token': token['choices'][0]['text']})}\n\n"
                 
 
                 yield f"data: {json.dumps({'done': True})}\n\n"
@@ -281,76 +216,45 @@ async def generate_stream(request: GenerateRequest):
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/generate")
-async def generate(request: GenerateRequest):
-    """Generate text (non-streaming fallback)"""
-    try:
-        logger.info(f"Generate request - model: {request.model_name}, temp: {request.temperature}, top_p: {request.top_p}")
+# @app.post("/generate")
+# async def generate(request: GenerateRequest):
+#     """Generate text (non-streaming)"""
+#     try:
+#         logger.info(f"Generate request - model: {request.model_name}, temp: {request.temperature}, top_p: {request.top_p}")
         
-        if request.model_name not in model_manager.models:
-            raise HTTPException(status_code=404, detail="Model not loaded")
+#         if request.model_name not in model_manager.models:
+#             raise HTTPException(status_code=404, detail="Model not loaded")
         
-        model = model_manager.models[request.model_name]
+#         model = model_manager.models[request.model_name]
         
-        if model._model is None:
-            raise HTTPException(status_code=400, detail="Model not loaded")
+#         if model._model is None:
+#             raise HTTPException(status_code=400, detail="Model not loaded")
         
-        full_response = ""
-        for token in model.model_inf(
-            prompt=request.prompt,
-            max_tokens=request.max_tokens,
-            temperature=request.temperature,
-            top_p=request.top_p,
-        ):
-            full_response += token
+#         full_response = ""
+#         for token in model.model_inf(
+#             prompt=request.prompt,
+#             max_tokens=request.max_tokens,
+#             temperature=request.temperature,
+#             top_p=request.top_p,
+#         ):
+#             full_response += token
         
-        tokens_used = model.max_token(request.prompt + full_response)
+#         tokens_used = model.max_token(request.prompt + full_response)
         
-        logger.info(f"Generated {tokens_used} tokens")
+#         logger.info(f"Generated {tokens_used} tokens")
         
-        return GenerateResponse(
-            response=full_response,
-            tokens_used=tokens_used
-        )
+#         return GenerateResponse(
+#             response=full_response,
+#             tokens_used=tokens_used
+#         )
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error generating: {e}")
+#         logger.error(traceback.format_exc())
+#         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/tokenize")
-async def count_tokens(request: TokenCountRequest):
-    """Count tokens in text"""
-    try:
-        if request.model_name not in model_manager.models:
-            raise HTTPException(status_code=404, detail="Model not loaded")
-        
-        model = model_manager.models[request.model_name]
-        
-        if model._model is None:
-            raise HTTPException(status_code=400, detail="Model not loaded")
-        
-        token_count = model.max_token(request.text)
-        return {"token_count": token_count}
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error tokenizing: {e}")
-        logger.error(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
-async def health_check():
-    """Check API health"""
-    return {
-        "status": "healthy",
-        "cuda_available": torch.cuda.is_available(),
-        "active_model": model_manager.active_model_name,
-        "loaded_models": list(model_manager.models.keys())
-    }
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

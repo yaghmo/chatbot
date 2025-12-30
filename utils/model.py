@@ -22,14 +22,15 @@ class Model:
     def _get_model(self):
         if self.cfg["framework"] in ("llama", "ctransformers"):
             os.makedirs("models", exist_ok=True)
-        
-        # DL model to local
-        hf_hub_download(
-            repo_id=self.cfg["url"],
-            filename=self.cfg["file_name"],
-            local_dir="models",
-            local_dir_use_symlinks=False
-        )
+            # DL model to local
+            hf_hub_download(
+                repo_id=self.cfg["url"],
+                filename=self.cfg["file_name"],
+                local_dir="models",
+                local_dir_use_symlinks=False
+            )
+        else:
+            ... #transformers 
 
         # get model info
         config_path = hf_hub_download(repo_id=self.cfg["origin"],filename="config.json")
@@ -77,28 +78,24 @@ class Model:
         MODEL_PATH = f'models/{self.cfg["file_name"]}'
         
         # Load model with gpu_layers
-        gpu_layers = -1 if self._device == "cpu" else 100
+        gpu_layers = 0 if self._device == "cpu" else 100
         self._model = AutoModelForCausalLM.from_pretrained(
             MODEL_PATH,
             model_type=self.cfg["type"],
             gpu_layers=gpu_layers,
         )
         print(f"Model loaded: {self.model_name}")
+    
 
     def model_load(self):
         if self.cfg["framework"] == "ctransformers":
             self._ctransformers()
 
-    def max_token(self, text: str) -> int:
-        """Count tokens in text"""
-        if self.cfg["framework"] == "ctransformers":
-            return len(self._model.tokenize(text))
-        return 0
 
     def model_inf(self, prompt: str, max_tokens: int, temperature: float, top_p: float):
-        if self.cfg["framework"] == "ctransformers":
-            print(f"[Model Inference] temp={temperature}, top_p={top_p}, max_tokens={max_tokens}")
-            
+        
+        print(f"[Model Inference] temp={temperature}, top_p={top_p}, max_tokens={max_tokens}")
+        if self.cfg["framework"] == "ctransformers":           
             # Generate with streaming
             for token in self._model(
                 prompt,
@@ -108,8 +105,7 @@ class Model:
                 stream=True,
             ):
                 yield token
-        else:
-            yield "Framework not supported"
+
 
     def unload(self):
         """Unload model and free memory"""

@@ -3,4 +3,4 @@
         {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","origin":"mistralai/Mistral-7B-Instruct-v0.2","type":"mistral","device": "hybrid","framework":"ctransformers","context_length":4096, "purpose": "Fast model, runs on GPU but also requires CPU."},
     "Mistral-7B-v0.2-cpu":
         {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF","file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf","origin":"mistralai/Mistral-7B-Instruct-v0.2","type":"mistral","device": "cpu","framework":"ctransformers","context_length":4096, "purpose": "Slower version of Mistral-7B-v0.2, runs on CPU."}
-    }
+}

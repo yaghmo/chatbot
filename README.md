@@ -28,7 +28,7 @@ This project is the evolution of the original `chatbot` repository and introduce
 
 ---
 
-## 🛠 Installation
+## Installation
 
 ### 1. Clone the repository
 ```bash
@@ -54,14 +54,12 @@ python launch.py
 
 ---
 
-## 🧠 Models Included
+## Models Included
 
 | Type | Model | Notes |
 |------|--------|--------|
 | LLM | **Mistral 7B (gguf)** | Local or API-based |
 | VLM | **Qwen V3 2B** | GPU‑accelerated multimodal model |
-
-You can replace or extend models via the `models/` directory.
 
 ---
 

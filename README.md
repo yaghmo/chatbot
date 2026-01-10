@@ -47,8 +47,6 @@ pip install -r requirements.txt
 
 ## Available Models
 
-All models run on GPU:
-
 | Model Name | Device | Speed |
 |------------|------|------|
 | `TheBloke/Mistral-7B-Instruct-v0.2-GGUF` | GPU but needs CPU | Fast

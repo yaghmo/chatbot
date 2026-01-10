@@ -1,79 +1,69 @@
-# Multi-Model Chatbot
+# Chatbot — Version 2.0.0
 
-This project is a ChatGPT-like web application built with Streamlit.  
-It lets you chat with different language models through a unified interface, choose which model to use, and tweak generation parameters (temperature, top_p, max tokens) while seeing responses stream in real time.
+A modular chatbot framework designed for easy experimentation with LLMs, VLMs, multimodal inputs, and customizable pipelines.  
+This project is the evolution of the original `chatbot` repository and introduces GPU‑accelerated vision capabilities, attachment handling, and a cleaner architecture for future development.
 
+---
+
+## What's New in v2.0.0
+
+- **Vision-Language Model Integration (VLM):**  
+  Added support for **Qwen V3 2B** running on GPU for fast and accurate multimodal reasoning: image understanding, OCR-like extraction, captioning, and more.
+
+- **Attachment Input Handling:**  
+  You can now upload images or documents directly; the system processes them and routes them through the appropriate model pipeline.
+
+- **Improved Modular Architecture:**  
+  Cleaner separation between components (UI, inference backend, runtime logic).
 ---
 
 ## Features
 
-- **Multi-model support** via a configurable `model_cfg.json` file  
-- **Model selection in the UI** (choose the active model from a dropdown)
-- **Live parameters control**: temperature, top_p, max_tokens
-- **Chat interface** with conversation history and recent chats sidebar
-- **Custom system prompt** loaded from `utils/system_prompt.txt`
-- **Streaming responses** from the backend API client
+- Text‑only and multimodal chat
+- GPU‑accelerated inference
+- Plug‑and‑play model configuration
+- Support for attachments (images and videos)
+- Local and cloud‑ready deployment
+- Fully open‑source and easy to customize
 
 ---
 
-## Project Structure
+## 🛠 Installation
 
-- `app.py` – Main Streamlit app (UI, sidebar, chat logic)
-- `utils/api_client.py` – API client used to load models and stream responses
-- `utils/model_cfg.json` – Configuration file describing available models (name, context length, purpose, etc.)
-- `utils/system_prompt.txt` – System prompt injected at the beginning of each conversation
-
-> Note: You can edit `model_cfg.json` and `system_prompt.txt` to adapt the chatbot to your own models and use cases.
-
----
-
-## Installation
-
-It is recommended to use a virtual environment (conda or `venv`).
-
+### 1. Clone the repository
 ```bash
-# 1. Clone the repository
 git clone https://github.com/yaghmo/chatbot.git
 cd chatbot
+```
 
-# 2. Create a virtual environment (example with conda)
-conda create -n chatbot_env python=3.10
-conda activate chatbot_env
+### 2. Create environment
+```bash
+conda create -n chatbot python=3.10 -y
+conda activate chatbot
+```
 
-# 3. Install dependencies
+### 3. Install dependencies
+```bash
 pip install -r requirements.txt
 ```
 
-
-## Available Models
-
-All models run on GPU:
-
-| Model Name | Device | Speed |
-|------------|------|------|
-| `TheBloke/Mistral-7B-Instruct-v0.2-GGUF` | GPU but needs CPU | Fast
-| `TheBloke/Mistral-7B-Instruct-v0.2-GGUF` | CPU | Slow
-<!-- | `RedHatAI/Mistral-7B-Instruct-v0.3-GPTQ-4bit` | CPU |
-| `RedHatAI/Mistral-7B-Instruct-v0.3-GPTQ-4bit` | GPU | -->
-
-
-## Usage
-
-After installing dependencies, Start the api server then launch the interface with:
-
-```
-python api_server.py
-# wait 2-3 secs
-
-streamlit run interface.py
-```
-or simply start the launcher, it will handle both files.
-
-```
+### 4. Start the app
+```bash
 python launch.py
 ```
 
-A web application will open where you can interact with models you select from settings, the cahtbot will then answer the user back.
+---
+
+## 🧠 Models Included
+
+| Type | Model | Notes |
+|------|--------|--------|
+| LLM | **Mistral 7B (gguf)** | Local or API-based |
+| VLM | **Qwen V3 2B** | GPU‑accelerated multimodal model |
+
+You can replace or extend models via the `models/` directory.
+
+---
 
 ## Examples
 

@@ -13,7 +13,7 @@ signal.signal(signal.SIGTERM, cleanup)
 
 print("Starting API...")
 procs.append(subprocess.Popen([sys.executable, "api_server.py"]))
-time.sleep(3)
+time.sleep(5)
 
 print("Starting Streamlit...")
 procs.append(subprocess.Popen([sys.executable, "-m", "streamlit", "run", "app.py"]))

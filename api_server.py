@@ -38,7 +38,7 @@ class ModelManager:
                 self.model_cfg = json.load(f)
             logger.info(f"Loaded config for {len(self.model_cfg)} models")
         except Exception as e:
-            logger.error(f"Failed to load config: {e}")
+            logger.exception(f"Failed to load config: {e}")
             raise
     
     def get_or_create_model(self, model_name: str) -> Model:
@@ -67,25 +67,27 @@ class LoadModelRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     model_name: str
-    prompt: str
-    max_tokens: int = 256
+    # previous code: template: [dict]
+    template: List[dict]  # correct code
+    max_tokens: int = 1024
     temperature: float = 0.7
     top_p: float = 1.0
     stream: bool = True
+    files: Optional[List[str]] = None  # correct code - add files parameter for VLM models
 
 class GenerateResponse(BaseModel):
     response: str
-    tokens_used: int
+    stream: bool = False
 
 # API Endpoints
 @app.on_event("startup")
 async def startup_event():
     try:
-        model_manager.load_config("utils/model_cfg.json")
+        model_manager.load_config("config/model_cfg.json")
         logger.info("API started successfully")
     except Exception as e:
-        logger.error(f"Startup failed: {e}")
-        logger.error(traceback.format_exc())
+        # previous code: logger.exception(f"Startup failed: {e}")\
+        logger.exception(f"Startup failed: {e}")  # correct code - removed trailing backslash
 
 
 @app.post("/models/load")
@@ -137,8 +139,7 @@ async def load_model(request: LoadModelRequest):
                     logger.info(f"Default RAM check: {result}")
                     return result
             except Exception as e:
-                logger.error(f"Error checking resources: {e}")
-                logger.error(traceback.format_exc())
+                logger.exception(f"Error checking resources: {e}")
                 return False
         
         # Try to load
@@ -172,8 +173,7 @@ async def load_model(request: LoadModelRequest):
         raise
     except Exception as e:
         error_msg = f"Error loading model: {str(e)}"
-        logger.error(error_msg)
-        logger.error(traceback.format_exc())
+        logger.exception(error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
 
 
@@ -194,17 +194,19 @@ async def generate_stream(request: GenerateRequest):
         def generate():
             try:
                 for token in model.model_inf(
-                    prompt=request.prompt,
+                    template=request.template,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                     top_p=request.top_p,
+                    stream=request.stream,
+                    files=request.files  # correct code - pass files parameter
                 ):
                     yield f"data: {json.dumps({'token': token})}\n\n" if model_manager.model_cfg[model_manager.active_model_name]["framework"] != "llama" else f"data: {json.dumps({'token': token['choices'][0]['text']})}\n\n"
                 
 
                 yield f"data: {json.dumps({'done': True})}\n\n"
             except Exception as e:
-                logger.error(f"Error during streaming: {e}")
+                logger.exception(f"Error during streaming: {e}")
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
         
         return StreamingResponse(generate(), media_type="text/event-stream")
@@ -212,48 +214,45 @@ async def generate_stream(request: GenerateRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in stream generate: {e}")
-        logger.error(traceback.format_exc())
+        logger.exception(f"Error in stream generate: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# @app.post("/generate")
-# async def generate(request: GenerateRequest):
-#     """Generate text (non-streaming)"""
-#     try:
-#         logger.info(f"Generate request - model: {request.model_name}, temp: {request.temperature}, top_p: {request.top_p}")
+@app.post("/generate")
+async def generate(request: GenerateRequest):
+    """Generate text (non-streaming)"""
+    try:
+        logger.info(f"Generate request - model: {request.model_name}")
         
-#         if request.model_name not in model_manager.models:
-#             raise HTTPException(status_code=404, detail="Model not loaded")
+        if request.model_name not in model_manager.models:
+            raise HTTPException(status_code=404, detail="Model not loaded")
         
-#         model = model_manager.models[request.model_name]
+        model = model_manager.models[request.model_name]
         
-#         if model._model is None:
-#             raise HTTPException(status_code=400, detail="Model not loaded")
+        if model._model is None:
+            raise HTTPException(status_code=400, detail="Model not loaded")
         
-#         full_response = ""
-#         for token in model.model_inf(
-#             prompt=request.prompt,
-#             max_tokens=request.max_tokens,
-#             temperature=request.temperature,
-#             top_p=request.top_p,
-#         ):
-#             full_response += token
+        full_response = ""
+        for token in model.model_inf(
+            template=request.template,
+            max_tokens=6,
+            temperature=0.3,
+            top_p=1,
+            stream=False,
+            files=request.files  # correct code - pass files parameter
+        ):
+            full_response += token
         
-#         tokens_used = model.max_token(request.prompt + full_response)
+        logger.info(f"Generated {full_response} tokens")
         
-#         logger.info(f"Generated {tokens_used} tokens")
-        
-#         return GenerateResponse(
-#             response=full_response,
-#             tokens_used=tokens_used
-#         )
+        return GenerateResponse(
+            response=full_response,
+        )
     
-#     except HTTPException:
-#         raise
-#     except Exception as e:
-#         logger.error(f"Error generating: {e}")
-#         logger.error(traceback.format_exc())
-#         raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error generating: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

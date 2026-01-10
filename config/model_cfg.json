@@ -1,0 +1,53 @@
+{   
+    "Mistral-7B-v0.2-gpu":
+        {"url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+        "file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+        "origin":"mistralai/Mistral-7B-Instruct-v0.2",
+        "mode": "llm",
+        "type":"mistral",
+        "device": "hybrid",
+        "framework":"ctransformers",
+        "context_length":4096,
+        "purpose": "Fast model, runs on GPU but also requires CPU.",
+        "format":"gguf"
+        },
+    "Mistral-7B-v0.2-cpu":
+        {
+            "url": "TheBloke/Mistral-7B-Instruct-v0.2-GGUF",
+            "file_name":"mistral-7b-instruct-v0.2.Q4_K_M.gguf",
+            "origin":"mistralai/Mistral-7B-Instruct-v0.2",
+            "mode": "llm",
+            "type":"mistral",
+            "device": "cpu",
+            "framework":"ctransformers",
+            "context_length":4096, 
+            "purpose": "Slower version of Mistral-7B-v0.2, runs on CPU.",
+            "format":"gguf"
+        },
+    "Qwen2-VL-2B-gpu":
+        {
+            "url": "Qwen/Qwen3-VL-2B-Instruct",
+            "file_name":"Qwen3-VL-2B-Instruct",
+            "origin":"Qwen/Qwen3-VL-2B-Instruct",
+            "mode": "vlm",
+            "type":"qwen",
+            "device": "gpu",
+            "framework":"transformers",
+            "context_length":5000,
+            "purpose": "Vision-language model, supports images (slow), runs on GPU.",
+            "format":"safetensors"
+        },
+    "Qwen2-VL-2B-cpu":
+        {
+            "url": "Qwen/Qwen3-VL-2B-Instruct",
+            "file_name":"Qwen3-VL-2B-Instruct",
+            "origin":"Qwen/Qwen3-VL-2B-Instruct",
+            "mode": "vlm",
+            "type":"qwen",
+            "device": "cpu",
+            "framework":"transformers",
+            "context_length":5000,
+            "purpose": "Vision-language model, supports images, runs on CPU.",
+            "format":"safetensors"
+        }
+}

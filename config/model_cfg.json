@@ -7,7 +7,7 @@
         "type": "qwen",
         "device": "gpu",
         "framework": "transformers",
-        "context_length": 5000,
+        "context_length": 10000,
         "purpose": "Vision-language model, supports images (slow), runs on GPU.",
         "format": "safetensors"
     },

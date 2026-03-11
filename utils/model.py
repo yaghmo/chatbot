@@ -221,6 +221,7 @@ class Model:
             )
             
         elif framework == "transformers":
+            # for qwen
             if mode == "vlm":
                 inputs = self._processor.apply_chat_template(
                     template,
@@ -236,7 +237,12 @@ class Model:
                     return_tensors="pt",
                     return_dict=True
                 )
+            if hasattr(inputs, 'to'):
                 inputs = inputs.to(self._model.device)
+            elif isinstance(inputs, dict):
+                # Regular dict
+                inputs = {k: v.to(self._model.device) if isinstance(v, torch.Tensor) else v 
+                            for k, v in inputs.items()}
         else:
             raise ValueError(f"Unsupported framework: {framework}")
         
@@ -254,7 +260,6 @@ class Model:
                 yield token
                 
         elif framework == "transformers":
-
             if stream:
                 from transformers import TextIteratorStreamer
                 from threading import Thread
@@ -301,7 +306,7 @@ class Model:
                 if mode == "vlm":
                     generated_ids_trimmed = [
                         out_ids[len(in_ids):] 
-                        for in_ids, out_ids in zip(inputs['input_ids'], outputs)
+                        for in_ids, out_ids in zip(inputs.input_ids, outputs)
                     ]
                     generated_text = self._processor.batch_decode(
                         generated_ids_trimmed,

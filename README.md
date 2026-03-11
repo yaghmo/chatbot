@@ -64,7 +64,7 @@ chatbot/
 
 | Name | Type | Device | Framework | Context |
 |------|------|--------|-----------|---------|
-| **Qwen3-VL-2B-gpu** | VLM | GPU | transformers | 5000 |
+| **Qwen3-VL-2B-gpu** | VLM | GPU | transformers | 256K |
 | **Mistral-7B-v0.2-gpu** | LLM | Hybrid (GPU+CPU) | ctransformers | 4096 |
 | **Mistral-7B-v0.2-cpu** | LLM | CPU | ctransformers | 4096 |
 

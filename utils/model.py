@@ -10,12 +10,12 @@ import logging
 import psutil
 import gc
 import re
-from utils.image_encoding import decode_image_msgpack
 
+logging.basicConfig(level=logging.INFO) 
 logger = logging.getLogger(__name__)
 
 class Model:
-    def __init__(self, cfg: dict, model_name):
+    def __init__(self, cfg: dict, model_name: int):
         self.cfg = cfg
         self.model_name = model_name
         self._device = cfg["device"]
@@ -53,7 +53,7 @@ class Model:
         # get model info
         config_path = hf_hub_download(repo_id=self.cfg.get("origin"),filename="config.json")
 
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         num_hidden_layers = None
@@ -93,10 +93,10 @@ class Model:
             logger.exception(f"Error accessing repository: {e}")
             
         if self.cfg.get("format") == "gguf":
-            sizes = [os.path.getsize(f'models/{self.cfg.get("file_name")}')]
+            sizes = [os.path.getsize(os.path.join("models",self.cfg.get("file_name")))]
         else:
             sizes = [self._get_file_size_from_url(f) for f in repo_files if f.endswith(self.cfg.get("format"))]
-            logger.info("repos :",repo_files)
+            logger.info(f"repos :{repo_files}")
             if not sizes:
                 logger.error("No files found in this repository.")
 
@@ -127,25 +127,24 @@ class Model:
             return False
 
     def can_fit_on_ram(self) -> bool:
-        return True
-        # if self.size == 0:
-        #     try:
-        #         self._get_model()
-        #     except Exception as e:
-        #         logger.error(f"Failed to get model size: {e}")
-        #         return False
-        # try:
-        #     import gc
-        #     gc.collect()
+        if self.size == 0:
+            try:
+                self._get_model()
+            except Exception as e:
+                logger.error(f"Failed to get model size: {e}")
+                return False
+        try:
+            import gc
+            gc.collect()
             
-        #     mem = psutil.virtual_memory()
-        #     available_gb = mem.available / (1024**3)
+            mem = psutil.virtual_memory()
+            available_gb = mem.available / (1024**3)
 
-        #     logger.info(f"RAM: {available_gb:.2f}GB available, need {self.size:.2f}GB.")
-        #     return available_gb >= self.size
-        # except Exception as e:
-        #     logger.info(f"RAM check error: {e}")
-        #     return False
+            logger.info(f"RAM: {available_gb:.2f}GB available, need {self.size:.2f}GB.")
+            return available_gb >= self.size
+        except Exception as e:
+            logger.info(f"RAM check error: {e}")
+            return False
 
     def _load_tokenizer(self):  
         """Load tokenizer or processor based on model mode"""
@@ -175,6 +174,7 @@ class Model:
             MODEL_PATH,
             model_type=self.cfg["type"],
             gpu_layers=gpu_layers,
+            context_length=self.cfg["context_length"]
         )
         logger.info(f"Model loaded: {self.model_name}")
     
@@ -190,8 +190,9 @@ class Model:
         self._model = Qwen3VLForConditionalGeneration.from_pretrained(
             self.cfg["url"],
             device_map=device_map,
-            torch_dtype=torch.bfloat16,
-            dtype="auto"
+            dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+            trust_remote_code=True
         )
         logger.info(f"Model loaded: {self.model_name}")
     
@@ -204,13 +205,12 @@ class Model:
         elif self.cfg["framework"] == "transformers":
             self._transformers()
 
-    def model_inf(self, template: list, max_tokens: int, temperature: float, top_p: float, stream: bool = True, files: list = None):
+    def model_inf(self, template: list, max_tokens: int, temperature: float, top_p: float, stream: bool = True):
     
         logger.info(f"[Model Inference] framework={self.cfg['framework']}, mode={self.cfg.get('mode')}, temp={temperature}, top_p={top_p}, max_tokens={max_tokens}")
         
         framework = self.cfg["framework"]
         mode = self.cfg.get("mode", "llm")
-        model_type = self.cfg.get("type")
         
         if framework == "ctransformers":
             # ctransformers needs text prompt
@@ -221,7 +221,7 @@ class Model:
             )
             
         elif framework == "transformers":
-            if mode == "vlm" and model_type == "qwen":
+            if mode == "vlm":
                 inputs = self._processor.apply_chat_template(
                     template,
                     tokenize=True,
@@ -229,17 +229,14 @@ class Model:
                     return_dict=True,
                     return_tensors="pt"
                 )
-                inputs = inputs.to(self._model.device)
             else:
-                # Standard transformers: use tokenizer
-                prompt = self._tokenizer.apply_chat_template(
+                inputs = self._tokenizer.apply_chat_template(
                     template,
                     add_generation_prompt=True,
-                    tokenize=False
+                    return_tensors="pt",
+                    return_dict=True
                 )
-                inputs = self._tokenizer(prompt, return_tensors="pt")
-                if self._device == "gpu" and torch.cuda.is_available():
-                    inputs = {k: v.to("cuda:0") for k, v in inputs.items()}
+                inputs = inputs.to(self._model.device)
         else:
             raise ValueError(f"Unsupported framework: {framework}")
         
@@ -259,7 +256,6 @@ class Model:
         elif framework == "transformers":
 
             if stream:
-                # correct code - Use TextIteratorStreamer for real token streaming
                 from transformers import TextIteratorStreamer
                 from threading import Thread
                 
@@ -280,16 +276,15 @@ class Model:
                     do_sample=temperature > 0,
                     streamer=streamer
                 )
-                
-                # Run generation in separate thread
-                thread = Thread(target=self._model.generate, kwargs=generation_kwargs)
-                thread.start()
-                
-                # Yield tokens as they come
-                for text in streamer:
-                    yield text
-                
-                thread.join()
+                with torch.inference_mode():
+                    thread = Thread(target=self._model.generate, kwargs=generation_kwargs)
+                    thread.start()
+                    
+                    # Yield tokens as they come
+                    for text in streamer:
+                        yield text
+                    
+                    thread.join()
             else:
                 # Non-streaming mode
                 with torch.no_grad():
@@ -306,7 +301,7 @@ class Model:
                 if mode == "vlm":
                     generated_ids_trimmed = [
                         out_ids[len(in_ids):] 
-                        for in_ids, out_ids in zip(inputs.input_ids, outputs)
+                        for in_ids, out_ids in zip(inputs['input_ids'], outputs)
                     ]
                     generated_text = self._processor.batch_decode(
                         generated_ids_trimmed,
@@ -321,38 +316,21 @@ class Model:
                 
                 yield generated_text
 
-            # with torch.no_grad():
-            #     outputs = self._model.generate(
-            #         **inputs,
-            #         max_new_tokens=max_tokens,
-            #         temperature=temperature,
-            #         top_k=40,
-            #         top_p=top_p,
-            #         repetition_penalty=1.15,
-            #         do_sample=temperature > 0,
-            #     )
-            
-            # if mode == "vlm":
-            #     generated_ids_trimmed = [
-            #         out_ids[len(in_ids):] 
-            #         for in_ids, out_ids in zip(inputs.input_ids, outputs)
-            #     ]
-            #     generated_text = self._processor.batch_decode(
-            #         generated_ids_trimmed,
-            #         skip_special_tokens=True,
-            #         clean_up_tokenization_spaces=False
-            #     )[0]
-            # else:
-            #     generated_text = self._tokenizer.decode(
-            #         outputs[0][inputs['input_ids'].shape[1]:],
-            #         skip_special_tokens=True
-            #     )
-            
-            # if stream:
-            #     for char in generated_text:
-            #         yield char
-            # else:
-            #     yield generated_text
+    def count_tokens(self, text):
+        """Count tokens for plain text or message list"""
+        if not text:
+            return 0
+        tokenizer = self._tokenizer if self._tokenizer else self._processor.tokenizer
+        if isinstance(text, list) and len(text) > 0 and isinstance(text[0], dict):
+            tokens = tokenizer.apply_chat_template(
+                text,
+                tokenize=True,
+                add_generation_prompt=False
+            )
+        else:
+            tokens = tokenizer.encode(text, add_special_tokens=False)
+        
+        return len(tokens)
 
 
     def unload(self):
@@ -365,7 +343,6 @@ class Model:
             del self._tokenizer
             self._tokenizer = None
         
-        # correct code - also clean up processor
         if self._processor:
             del self._processor
             self._processor = None

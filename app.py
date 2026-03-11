@@ -1,5 +1,7 @@
+import logging
 import streamlit as st
 import json
+import tempfile
 import uuid
 from datetime import datetime
 from utils.api_client import APIClient
@@ -23,6 +25,8 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+logging.basicConfig(level=logging.INFO) 
+logger = logging.getLogger(__name__)
 
 
 class SidebarManager:
@@ -33,6 +37,8 @@ class SidebarManager:
             st.session_state.recent_chats = []
         if "current_chat_id" not in st.session_state:
             st.session_state.current_chat_id = None
+        if "current_messages" not in st.session_state:
+            st.session_state.current_messages = []
 
         if "temperature" not in st.session_state:
             st.session_state.temperature = 0.5
@@ -74,14 +80,8 @@ class SidebarManager:
 
         if "list_of_path" not in st.session_state:
             st.session_state.list_of_path = []
-        if "rag_files" not in st.session_state:
-            st.session_state.rag_files = []
-        if "uploader_key" not in st.session_state:
-            st.session_state.uploader_key = 0
-        if "rag_active" not in st.session_state:
-            st.session_state.rag_active = False
-        if "rag_active2" not in st.session_state:
-            st.session_state.rag_active2 = False
+        if "rag_docs" not in st.session_state:
+            st.session_state.rag_docs = []
         if "collection" not in st.session_state:
             st.session_state.collection = None
 
@@ -91,8 +91,8 @@ class SidebarManager:
                 self._render_settings()
                 self._render_new_chat_button()
                 st.divider()
-                self._render_RAG_upload()
-                st.divider()
+                # self._render_blobal_RAG()
+                # st.divider()
                 self._render_recent_chats()
 
     def _render_settings(self):
@@ -160,99 +160,14 @@ class SidebarManager:
         if st.button("### New Chat",icon="➕"):
             self.start_new_conversation()
     
-    def _render_RAG_upload(self):
+    def _render_blobal_RAG(self):
         """Render RAG document upload section"""
-
-        # Constants
-        ALLOWED_EXTENSIONS = ['txt', 'md', 'pdf', 'docx', 'doc', 'xlsx', 'xls', 
-                            'csv', 'pptx', 'ppt', 'json', 'html', 'htm', 'rtf']
-        MAX_SOURCES = 10
-
-        st.markdown("### Sources")
-
         if not st.toggle(
-            "Activate RAG",
+            "Activate RAG over whole account",
             key="rag_active",  
             value=st.session_state.get("rag_active", False)
         ):
             return
-        
-        # Show current sources count
-        current_count = len(st.session_state.rag_files)
-        remaining = MAX_SOURCES - current_count
-        
-        if remaining > 0:
-            # File uploader
-            uploaded_files = st.file_uploader(
-                label=f"Add sources ({current_count}/{MAX_SOURCES})",
-                accept_multiple_files=True,
-                type=ALLOWED_EXTENSIONS,
-                key=f"rag_uploader_{st.session_state.uploader_key}",
-                help=f"You can upload up to {remaining} more document(s) - OCR feature is not implemented."
-            )
-            
-            if uploaded_files:
-                # Check if adding would exceed limit
-                new_count = current_count + len(uploaded_files)
-                
-                
-                if new_count > MAX_SOURCES:
-                    st.warning(f"⚠️ Can only add {remaining} more document(s). Please select fewer files.")
-                else:
-                    # Add button
-                    if st.button("Add Sources"):
-                        for file in uploaded_files:
-                            text_doc = tm.extract_text_from_file(file)
-                            if text_doc:
-                                if not st.session_state.rag_active2:
-                                    st.session_state.rag_active2 = True
-                                    st.session_state.collection = tm.init_chromadb()
-                                with st.spinner("Processing documents..."): 
-                                    summary = tm.summary_prompt(text_doc[:1500])
-                                    summary = APIClient.generate(
-                                        model_name=st.session_state.active_model_name,
-                                        template=[{"role": "user", "content":[{"type":"text", "text":summary}] if mode == "vlm" else summary}],
-                                        max_tokens=300,
-                                    )
-                                    st.session_state.rag_files.append(file.name)
-                                    tm.add_document_to_chromadb(st.session_state.collection,file.name,text_doc,summary)
-                            else:
-                                st.warning(f"⚠️ Some documents contain no text (scans, empty, etc.)")
-                                time.sleep(4)
-                                    
-                        # Reset uploader
-                        st.session_state.uploader_key += 1
-                        st.rerun()
-        else:
-            st.info(f"Maximum sources reached ({MAX_SOURCES}/{MAX_SOURCES})")
-        
-        # Display current sources
-        if st.session_state.rag_files:
-            st.divider()
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                st.caption(f"**{len(st.session_state.rag_files)} source(s) loaded**")
-            with col2:
-                if st.button("Clear all", key="clear_rag"):
-                    st.session_state.rag_files = []
-                    st.session_state.collection.delete(ids=st.session_state.collection.get()["ids"])
-                    st.rerun()
-
-            with st.expander("View sources", expanded=False):
-                for idx, filename in enumerate(st.session_state.rag_files):
-                    col_name, col_btn = st.columns([0.85, 0.15])
-
-                    with col_name:
-                        st.markdown(
-                            f"<div class='file-card'><span class='file-name'>{idx}. {filename}</span></div>",
-                            unsafe_allow_html=True
-                        )
-
-                    with col_btn:
-                        if st.button("✖", key=f"remove_{idx}", help=f"Remove {filename}", use_container_width=True):
-                            st.session_state.rag_files.pop(filename)  
-                            st.rerun()
 
     def _render_recent_chats(self):
         st.markdown("### Recent Chats")
@@ -282,12 +197,14 @@ class SidebarManager:
         
         if len(st.session_state.messages) > 1:
             for msg in st.session_state.messages:
-                title = "New chat"
+                title = "New Chat"
                 if msg["role"] == "user":
-                    if len(msg["text"])>0:
+                    title = msg["text"]
+                    if len(msg["text"].split())>10:
                         title = APIClient.generate(
                         model_name=st.session_state.active_model_name,
-                        template=[{"role": "user", "content":[{"type":"text", "text":tm.system_instruction(msg["text"])}] if mode == "vlm" else tm.system_instruction(msg["text"])}]
+                        template=[{"role": "user", "content":[{"type":"text", "text":tm.title_prompt(msg["text"])}] if mode == "vlm" else tm.title_prompt(msg["text"])}],
+                        max_tokens=8,
                         )
                     break
 
@@ -336,13 +253,20 @@ class ChatInterface:
             unsafe_allow_html=True
         )
 
-
     def _render_chat_history(self):
         for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                if "files" in message:
-                    self._display_files_as_cards(message["files"])
-                st.markdown(message.get("text",""))
+            with st.chat_message(message.get("role", "assistant")):
+
+                medias = message.get("medias", [])
+                docs = message.get("docs", [])
+
+                if medias or docs:
+                    self._display_files_as_cards(medias=medias, docs=docs)
+
+                if message.get("audio"):
+                    st.audio(message["audio"])
+
+                st.markdown(message.get("text", ""))
 
 
     def _save_current_chat_to_recents(self):
@@ -369,15 +293,16 @@ class ChatInterface:
             # Generate title from first user message
             title = "New Chat"
             for msg in st.session_state.messages:
-                title = "New chat"
                 if msg["role"] == "user":
-                    if len(msg["text"])>0:
+                    title = msg["text"]
+                    if len(msg["text"].split())>10:
                         title = APIClient.generate(
                             model_name=st.session_state.active_model_name,
                             template=[{
                                 "role": "user", 
-                                "content": [{"type":"text", "text":tm.system_instruction(msg["text"])}] if mode == "vlm" else tm.system_instruction(msg["text"])
-                            }]
+                                "content": [{"type":"text", "text":tm.title_prompt(msg["text"])}] if mode == "vlm" else tm.title_prompt(msg["text"])
+                            }],
+                            max_tokens = 8,
                         )
                     break
             
@@ -396,7 +321,7 @@ class ChatInterface:
         # videos
         "mp4", "mov", "avi", "mkv", "webm",
         # documents
-        "pdf", "txt", "csv", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "json"
+        'txt', 'md', 'pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'json', 'html', 'htm', 'rtf'
         ]
         if prompt := st.chat_input(
             "Ask anything",
@@ -406,40 +331,41 @@ class ChatInterface:
             ):
             self._handle_user_message(prompt)
 
-    def _display_files_as_cards(self, files, max_preview=3):
-        """
-        Display uploaded files as small cards on the right side
-        with optional "+N more" button above the user input area.
-        """
+    def _display_files_as_cards(self, medias=None, docs=None, max_preview=3):
         main_col, right_col = st.columns([5, 2])
 
         with right_col:
-            preview_files = files[:max_preview]
-            extra_files = files[max_preview:]
+            preview_medias = medias[:max_preview]
+            extra_medias = medias[max_preview:]
 
-            if preview_files:
-                cols = st.columns(len(preview_files), gap="small")
-                for col, file in zip(cols, preview_files):
+            if preview_medias:
+                cols = st.columns(len(preview_medias), gap="small")
+                for col, media in zip(cols, preview_medias):
                     with col:
-                        file_type = file.type.split("/")[0]
-                        if file_type == "image":
-                            st.image(file, width="content")
-                        elif file_type == "video":
-                            st.video(file)
+                        media_type = media.type.split("/")[0]
+                        if media_type == "image":
+                            st.image(media, width='stretch')
+                        elif media_type == "video":
+                            st.video(media)
                         else:
-                            st.markdown(f"📄 {file.name}")
+                            st.markdown(f"📄 {media.name}")
 
-            if extra_files:
-                with st.expander(f"+{len(extra_files)} more"):
-                    for file in extra_files:
-                        st.markdown(f"**{file.name}**")
-                        file_type = file.type.split("/")[0]
-                        if file_type == "image":
-                            st.image(file, width="content")
-                        elif file_type == "video":
-                            st.video(file)
-                        else:
-                            st.markdown(f"📄 {file.name}")
+            if extra_medias:
+                with st.expander(f"+{len(extra_medias)} more media"):
+                    for media in extra_medias:
+                        st.markdown(f"**{media.name}**")
+                        media_type = media.type.split("/")[0]
+                        if media_type == "image":
+                            st.image(media, width='stretch')
+                        elif media_type == "video":
+                            st.video(media)
+
+            if docs:
+                if preview_medias:
+                    st.divider()
+                st.caption("Documents")
+                for file in docs:
+                    st.markdown(f"📄 {file.rsplit('_', 2)[0] }")
 
     def _handle_user_message(self, prompt):
         
@@ -447,21 +373,29 @@ class ChatInterface:
             st.session_state.current_chat_id = str(uuid.uuid4())
 
         mode = st.session_state.model_cfg[st.session_state.active_model_name].get("mode")
-        MAX_TOKENS = 640
-        num_tokens = 0 
+        model_name = st.session_state.active_model_name
         text_content = prompt.text or ""
-        files_info = []
-
-        if prompt.audio:
-            message_placeholder = st.markdown("Processing audio...")
-            text_content = "AHOL"
-            #voice recog
-        
-        content = text_content
+        media_files = []
+        doc_files = []
+        prompt_docs = []
         vlm_content = []
         documents = []
         text_doc = ""
         message_placeholder = st.empty()
+
+        if prompt.audio:
+            message_placeholder = st.markdown("*Processing audio...*")
+            suffix = os.path.splitext(prompt.audio.name)[1] or ".wav"
+            prompt.audio.seek(0)
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
+                f.write(prompt.audio.read())
+                temp_path = f.name
+            text_content = APIClient.transcribe(audio_path = temp_path)
+            st.session_state.list_of_path.append(temp_path)
+            message_placeholder.empty()
+
+        content = text_content
         if prompt.files:
             media_files = [
                 f for f in prompt.files
@@ -470,7 +404,7 @@ class ChatInterface:
             doc_files = [f for f in prompt.files if f not in media_files]
             if media_files:
                 if mode == "vlm":
-                    message_placeholder.markdown("Analysing medias...")
+                    message_placeholder.markdown("*Analysing medias...*")
                     for file in media_files:
                         temp_path, media_type = tm.media_resize(file=file)
                         vlm_content.append({
@@ -478,66 +412,87 @@ class ChatInterface:
                             media_type: temp_path
                         })
                         st.session_state.list_of_path.append(temp_path)
-                        files_info.append(file)
                 else:
                     st.toast(f"⚠️ {len(media_files)} media file(s) detected but current model doesn't support vision. Please select a VLM for such feature.",duration = "long")
-
+            message_placeholder.empty()
             if doc_files:
-                rag_files = []
-                message_placeholder.markdown("Analysing documents...")
-                for doc in doc_files:
-                    text_doc = tm.extract_text_from_file(doc)
-                    num_tokens = APIClient.count_tokens(
-                        model_name = st.session_state.active_model_name,
-                        text = text_doc
+                message_placeholder.markdown("*Analysing documents...*")
+                for file in doc_files:
+                    text_doc = tm.extract_text_from_file(file)
+                    all_doc = list(set(prompt_docs + st.session_state.rag_docs))
+                    is_sim = APIClient.check_sim(model_name=st.session_state.active_model_name,user="user",all_doc = all_doc, text_doc = text_doc)
+
+                    if text_doc and not is_sim:
+                        introduction = text_doc[:3000]
+                        summary = APIClient.generate(
+                            model_name=st.session_state.active_model_name,
+                            template=[{"role": "user", "content":[{"type":"text", "text":tm.summary_prompt(introduction)}] if mode == "vlm" else tm.summary_prompt(introduction)}],
+                            max_tokens=300,
                         )
-                    st.write(text_doc[:])
-                    if num_tokens < MAX_TOKENS:
-                        documents.append(text_doc)
-                        files_info.append(doc)
-                if len(documents)<len(doc_files):
-                    st.toast(f"⚠️ some documents are too large, please activate the RAG option (in settings) and upload them there.",duration = "long")
-            
-            if documents:
-                content = tm.make_docs_query(text_content,documents)                         
 
-        if st.session_state.rag_active and st.session_state.rag_files: 
-            message_placeholder.markdown("Analysing documents...")
-            relevent_chunks = tm.hierarchical_retrieval(collection = st.session_state.collection, old_files=None, chat_files=st.session_state.rag_files, query = content, message_placeholder=message_placeholder)
+                        doc_id = APIClient.add_document(user = "user",
+                            chat_id = st.session_state.current_chat_id,
+                            file_name = file.name,
+                            summary = summary,
+                            content = text_doc,
+                            model_name= st.session_state.active_model_name,
+                            )
+                        prompt_docs.append(doc_id)
+                    elif not text_doc:
+                        st.toast(f"⚠️ Some documents contain no text (scans, empty, etc.)")
+                if len(prompt_docs)!=len(doc_files):
+                    st.toast(f"⚠️ Some documents are no saved for being identical with some others.")
+
+                
+        st.session_state.rag_docs.extend(prompt_docs)
+        if st.session_state.rag_docs:
+            relevent_chunks = APIClient.rag_query(
+                user="user",
+                chat_docs=st.session_state.rag_docs,
+                query=text_content,
+                top_n=5,
+                threshold = 0.2,
+            )
+            logger.info(f"Relevent chunks : {relevent_chunks}")
+
             if len(relevent_chunks)>0:
-                content = tm.rag_prompt(text_content, relevent_chunks)
-            # else:
-            #     st.warning("No relevant information was found in the supplied RAG sources, Consider disabling RAG if you prefer a general response.")
-
-            # st.write(relevent_docs)
-
+                content = tm.make_rag_query(text_content, relevent_chunks)
+        
+        message_placeholder.empty()
+        
         vlm_content.append({"type": "text", "text": content})
 
+        # check for history
+        st.session_state.current_messages = tm.summarize_history(messages=st.session_state.current_messages,mode = mode, model_name=model_name, max_window_size= int(st.session_state.context_length*0.69))
+        
         message = {
         "role": "user",
         "text": text_content,
         "content": content,
         "vlm_content": vlm_content,
-        "files": files_info
+        "medias": media_files,
+        "audio": prompt.audio or None,
+        "docs": prompt_docs, 
         }
+
         st.session_state.messages.append(message)
+        st.session_state.current_messages.append(message)
 
         with st.chat_message("user"):
-            if "files" in message:
-                self._display_files_as_cards(message["files"])
-            st.markdown(text_content)
-
+            if any(file in message for file in ("medias", "docs")):
+                self._display_files_as_cards(medias=message["medias"],docs=message["docs"])
+            if prompt.audio:
+                st.audio(prompt.audio)
+                st.markdown(text_content)
+            else:
+                st.markdown(text_content)
         self._save_current_chat_to_recents()
 
         with st.chat_message("assistant"):
-            if message["text"] == "" and len(message["files"]) == 0:
-                response = "Hum? you forgot to say something ?"
-                st.markdown(response)
-            else:
-                template = tm.build_prompt_template(messages=st.session_state.messages.copy()[1:],system_prompt=st.session_state.sysprompt,mode=mode)
-                response = self._generate_response(template)
-                # response = "basdf"
-                tm.clear_temp(list_of_path= st.session_state.list_of_path)
+            template = tm.build_prompt_template(messages=st.session_state.current_messages,mode=mode,system_prompt=st.session_state.sysprompt)
+            response = self._generate_response(template)
+            # response = content
+            tm.clear_temp(list_of_path= st.session_state.list_of_path)
 
         st.session_state.messages.append({
             "role": "assistant",
@@ -545,6 +500,8 @@ class ChatInterface:
             "content": response,
             "text": response
         })
+
+        st.session_state.current_messages.append(st.session_state.messages[-1])
         self._save_current_chat_to_recents()
         st.rerun()
 
@@ -552,11 +509,10 @@ class ChatInterface:
         if not st.session_state.active_model_name:
             st.error("Please select and load a model first!")
             return "Model not loaded."
-
+        
         message_placeholder = st.empty()
         message_placeholder.markdown("*Thinking...*")
         full_response = ""
-
         max_tokens = st.session_state.max_tokens
         temperature = st.session_state.temperature
         top_p = st.session_state.top_p

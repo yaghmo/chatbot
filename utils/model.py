@@ -1,18 +1,26 @@
-from transformers import AutoTokenizer, AutoModel, AutoProcessor, AutoModelForVision2Seq, Qwen3VLForConditionalGeneration
-from ctransformers import AutoModelForCausalLM
-import torch
-from huggingface_hub import hf_hub_download, hf_hub_url, HfApi
-import os
-import json
-import subprocess
-import requests
-import logging
-import psutil
-import gc
-import re
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO) 
+load_dotenv()
+
+import gc
+import json
+import logging
+import os
+import re
+import subprocess
+
+import psutil
+import requests
+import torch
+from ctransformers import AutoModelForCausalLM
+from huggingface_hub import HfApi, hf_hub_download, hf_hub_url
+from transformers import AutoProcessor, AutoTokenizer, Qwen3VLForConditionalGeneration
+
+MODELS_DIR = os.getenv("MODELS_DIR", "models")
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class Model:
     def __init__(self, cfg: dict, model_name: int):
@@ -21,7 +29,7 @@ class Model:
         self._device = cfg["device"]
         self._model = None
         self._tokenizer = None
-        self._processor = None 
+        self._processor = None
         self.size = 0
 
     def _get_file_size_from_url(self, filename):
@@ -29,11 +37,11 @@ class Model:
         try:
             url = hf_hub_url(repo_id=self.cfg["url"], filename=filename)
             response = requests.head(url, allow_redirects=True, timeout=10)
-            
-            if 'Content-Length' in response.headers:
-                return int(response.headers['Content-Length'])
-            if 'X-Linked-Size' in response.headers:
-                return int(response.headers['X-Linked-Size'])
+
+            if "Content-Length" in response.headers:
+                return int(response.headers["Content-Length"])
+            if "X-Linked-Size" in response.headers:
+                return int(response.headers["X-Linked-Size"])
 
         except Exception as e:
             logger.exception(f"Error getting size for {filename}: {e}")
@@ -41,24 +49,24 @@ class Model:
 
     def _get_model(self):
         if self.cfg["framework"] in ("llama", "ctransformers"):
-            os.makedirs("models", exist_ok=True)
+            os.makedirs(MODELS_DIR, exist_ok=True)
             # DL model to local
             hf_hub_download(
                 repo_id=self.cfg["url"],
                 filename=self.cfg["file_name"],
-                local_dir="models",
-                local_dir_use_symlinks=False
+                local_dir=MODELS_DIR,
+                local_dir_use_symlinks=False,
             )
 
         # get model info
-        config_path = hf_hub_download(repo_id=self.cfg.get("origin"),filename="config.json")
+        config_path = hf_hub_download(repo_id=self.cfg.get("origin"), filename="config.json")
 
         with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
 
         num_hidden_layers = None
         hidden_size = None
-        
+
         if "num_hidden_layers" in config:
             num_hidden_layers = config.get("num_hidden_layers")
             hidden_size = config.get("hidden_size")
@@ -68,22 +76,22 @@ class Model:
         elif "num_layers" in config:
             num_hidden_layers = config.get("num_layers")
             hidden_size = config.get("hidden_dim") or config.get("d_model")
-        
+
         # If still not found, use reasonable defaults based on model type
         if num_hidden_layers is None or hidden_size is None:
-            logger.warning(f"Could not find num_hidden_layers or hidden_size in config. Using defaults.")
+            logger.warning("Could not find num_hidden_layers or hidden_size in config. Using defaults.")
             num_hidden_layers = 32
             hidden_size = 4096
 
         torch_dtype = config.get("torch_dtype", "float16")
-        
+
         # Handle torch_dtype being a string like "float16" or actual value
         if isinstance(torch_dtype, str):
             digits = re.sub(r"\D", "", torch_dtype)
         else:
             digits = "16"
-        
-        bytes_per_element = {"32":4,"16":2,"8":1,"4":0.5,"1":0.25}
+
+        bytes_per_element = {"32": 4, "16": 2, "8": 1, "4": 0.5, "1": 0.25}
         bytes_per_element = bytes_per_element.get(digits, 2)
 
         api = HfApi()
@@ -91,9 +99,9 @@ class Model:
             repo_files = api.list_repo_files(repo_id=self.cfg["url"], repo_type="model")
         except Exception as e:
             logger.exception(f"Error accessing repository: {e}")
-            
+
         if self.cfg.get("format") == "gguf":
-            sizes = [os.path.getsize(os.path.join("models",self.cfg.get("file_name")))]
+            sizes = [os.path.getsize(os.path.join("models", self.cfg.get("file_name")))]
         else:
             sizes = [self._get_file_size_from_url(f) for f in repo_files if f.endswith(self.cfg.get("format"))]
             logger.info(f"repos :{repo_files}")
@@ -103,8 +111,8 @@ class Model:
         total_size_bytes = sum(size for size in sizes if sizes is not None)
 
         kv_cache_bytes = num_hidden_layers * self.cfg["context_length"] * hidden_size * 2 * bytes_per_element
-        self.size = (total_size_bytes + kv_cache_bytes )/ (1024**3)  # in GB
-        
+        self.size = (total_size_bytes + kv_cache_bytes) / (1024**3)  # in GB
+
         logger.info(f"Model size estimate: {self.size:.2f} GB (layers={num_hidden_layers}, hidden={hidden_size})")
 
     def can_fit_on_gpu(self) -> bool:
@@ -116,10 +124,12 @@ class Model:
                 return False
         try:
             result = subprocess.run(
-                ['nvidia-smi', '--query-gpu=memory.free', '--format=csv,noheader,nounits'],
-                capture_output=True, text=True, check=True
+                ["nvidia-smi", "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                check=True,
             )
-            available_gb = float(result.stdout.strip().split('\n')[0]) / 1024
+            available_gb = float(result.stdout.strip().split("\n")[0]) / 1024
             logger.info(f"GPU: {available_gb:.2f}GB available, need {self.size:.2f}GB")
             return available_gb >= self.size
         except Exception as e:
@@ -135,8 +145,9 @@ class Model:
                 return False
         try:
             import gc
+
             gc.collect()
-            
+
             mem = psutil.virtual_memory()
             available_gb = mem.available / (1024**3)
 
@@ -146,11 +157,13 @@ class Model:
             logger.info(f"RAM check error: {e}")
             return False
 
-    def _load_tokenizer(self):  
+    def _load_tokenizer(self):
         """Load tokenizer or processor based on model mode"""
         try:
-            tokenizer_path = self.cfg.get("origin", self.cfg["url"]) if self.cfg["framework"] == "ctransformers" else self.cfg["url"]
-            
+            tokenizer_path = (
+                self.cfg.get("origin", self.cfg["url"]) if self.cfg["framework"] == "ctransformers" else self.cfg["url"]
+            )
+
             if self.cfg.get("mode") == "llm":
                 self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
                 logger.info(f"Tokenizer loaded from {tokenizer_path} for {self.model_name}")
@@ -167,17 +180,14 @@ class Model:
     def _ctransformers(self):
         if self.size == 0:
             self._get_model()
-        MODEL_PATH = f'models/{self.cfg["file_name"]}'
+        MODEL_PATH = os.path.join(MODELS_DIR, self.cfg["file_name"])
 
         gpu_layers = 0 if self._device == "cpu" else 100
         self._model = AutoModelForCausalLM.from_pretrained(
-            MODEL_PATH,
-            model_type=self.cfg["type"],
-            gpu_layers=gpu_layers,
-            context_length=self.cfg["context_length"]
+            MODEL_PATH, model_type=self.cfg["type"], gpu_layers=gpu_layers, context_length=self.cfg["context_length"]
         )
         logger.info(f"Model loaded: {self.model_name}")
-    
+
     def _transformers(self):
         device_map = "cpu"  # default to CPU
         if self._device == "gpu" and torch.cuda.is_available():
@@ -186,67 +196,56 @@ class Model:
             device_map = "cpu"
         elif self._device == "hybrid":
             device_map = "auto"
-        
+
         self._model = Qwen3VLForConditionalGeneration.from_pretrained(
             self.cfg["url"],
             device_map=device_map,
             dtype=torch.bfloat16,
             attn_implementation="sdpa",
-            trust_remote_code=True
+            trust_remote_code=True,
         )
         logger.info(f"Model loaded: {self.model_name}")
-    
 
     def model_load(self):
         self._load_tokenizer()
-        
+
         if self.cfg["framework"] == "ctransformers":
             self._ctransformers()
         elif self.cfg["framework"] == "transformers":
             self._transformers()
 
     def model_inf(self, template: list, max_tokens: int, temperature: float, top_p: float, stream: bool = True):
-    
-        logger.info(f"[Model Inference] framework={self.cfg['framework']}, mode={self.cfg.get('mode')}, temp={temperature}, top_p={top_p}, max_tokens={max_tokens}")
-        
+
+        logger.info(
+            f"[Model Inference] framework={self.cfg['framework']}, mode={self.cfg.get('mode')}, temp={temperature}, top_p={top_p}, max_tokens={max_tokens}"
+        )
+
         framework = self.cfg["framework"]
         mode = self.cfg.get("mode", "llm")
-        
+
         if framework == "ctransformers":
             # ctransformers needs text prompt
-            inputs = self._tokenizer.apply_chat_template(
-                template,
-                add_generation_prompt=True,
-                tokenize=False
-            )
-            
+            inputs = self._tokenizer.apply_chat_template(template, add_generation_prompt=True, tokenize=False)
+
         elif framework == "transformers":
             # for qwen
             if mode == "vlm":
                 inputs = self._processor.apply_chat_template(
-                    template,
-                    tokenize=True,
-                    add_generation_prompt=True,
-                    return_dict=True,
-                    return_tensors="pt"
+                    template, tokenize=True, add_generation_prompt=True, return_dict=True, return_tensors="pt"
                 )
             else:
                 inputs = self._tokenizer.apply_chat_template(
-                    template,
-                    add_generation_prompt=True,
-                    return_tensors="pt",
-                    return_dict=True
+                    template, add_generation_prompt=True, return_tensors="pt", return_dict=True
                 )
-            if hasattr(inputs, 'to'):
+            if hasattr(inputs, "to"):
                 inputs = inputs.to(self._model.device)
             elif isinstance(inputs, dict):
                 # Regular dict
-                inputs = {k: v.to(self._model.device) if isinstance(v, torch.Tensor) else v 
-                            for k, v in inputs.items()}
+                inputs = {k: v.to(self._model.device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
         else:
             raise ValueError(f"Unsupported framework: {framework}")
-        
-        # Generate 
+
+        # Generate
         if framework == "ctransformers":
             for token in self._model(
                 inputs,
@@ -255,21 +254,22 @@ class Model:
                 top_k=40,
                 top_p=top_p,
                 repetition_penalty=1.15,
-                stream=stream
+                stream=stream,
             ):
                 yield token
-                
+
         elif framework == "transformers":
             if stream:
-                from transformers import TextIteratorStreamer
                 from threading import Thread
-                
+
+                from transformers import TextIteratorStreamer
+
                 streamer = TextIteratorStreamer(
                     self._processor.tokenizer if mode == "vlm" else self._tokenizer,
                     skip_prompt=True,
-                    skip_special_tokens=True
+                    skip_special_tokens=True,
                 )
-                
+
                 # Generation config
                 generation_kwargs = dict(
                     **inputs,
@@ -279,16 +279,16 @@ class Model:
                     top_p=top_p,
                     repetition_penalty=1.15,
                     do_sample=temperature > 0,
-                    streamer=streamer
+                    streamer=streamer,
                 )
                 with torch.inference_mode():
                     thread = Thread(target=self._model.generate, kwargs=generation_kwargs)
                     thread.start()
-                    
+
                     # Yield tokens as they come
                     for text in streamer:
                         yield text
-                    
+
                     thread.join()
             else:
                 # Non-streaming mode
@@ -302,23 +302,19 @@ class Model:
                         repetition_penalty=1.15,
                         do_sample=temperature > 0,
                     )
-                
+
                 if mode == "vlm":
                     generated_ids_trimmed = [
-                        out_ids[len(in_ids):] 
-                        for in_ids, out_ids in zip(inputs.input_ids, outputs)
+                        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, outputs)
                     ]
                     generated_text = self._processor.batch_decode(
-                        generated_ids_trimmed,
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False
+                        generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
                     )[0]
                 else:
                     generated_text = self._tokenizer.decode(
-                        outputs[0][inputs['input_ids'].shape[1]:],
-                        skip_special_tokens=True
+                        outputs[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
                     )
-                
+
                 yield generated_text
 
     def count_tokens(self, text):
@@ -327,34 +323,29 @@ class Model:
             return 0
         tokenizer = self._tokenizer if self._tokenizer else self._processor.tokenizer
         if isinstance(text, list) and len(text) > 0 and isinstance(text[0], dict):
-            tokens = tokenizer.apply_chat_template(
-                text,
-                tokenize=True,
-                add_generation_prompt=False
-            )
+            tokens = tokenizer.apply_chat_template(text, tokenize=True, add_generation_prompt=False)
         else:
             tokens = tokenizer.encode(text, add_special_tokens=False)
-        
-        return len(tokens)
 
+        return len(tokens)
 
     def unload(self):
         """Unload model and free memory"""
         if self._model:
             del self._model
             self._model = None
-        
+
         if self._tokenizer:
             del self._tokenizer
             self._tokenizer = None
-        
+
         if self._processor:
             del self._processor
             self._processor = None
 
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        
+
         gc.collect()
         logger.info(f"Model unloaded: {self.model_name}")
 

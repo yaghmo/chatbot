@@ -1,6 +1,13 @@
-import subprocess, sys, socket, time, signal, os, platform, requests
+import signal
+import socket
+import subprocess
+import sys
+import time
+
+import requests
 
 procs = []
+
 
 def wait_for_api(url, timeout=30):
     start = time.time()
@@ -15,6 +22,7 @@ def wait_for_api(url, timeout=30):
         time.sleep(1)
         print("API did not start in time")
         return False
+
 
 def wait_for_port(host, port, timeout=120):
     start = time.time()
@@ -33,11 +41,15 @@ def wait_for_port(host, port, timeout=120):
     print("API did not start in time")
     return False
 
+
 def cleanup(*_):
-    for p in procs: 
-        try: p.terminate()
-        except: pass
+    for p in procs:
+        try:
+            p.terminate()
+        except:
+            pass
     sys.exit(0)
+
 
 signal.signal(signal.SIGINT, cleanup)
 signal.signal(signal.SIGTERM, cleanup)
@@ -52,4 +64,3 @@ procs.append(subprocess.Popen([sys.executable, "-m", "streamlit", "run", "app.py
 
 print("\n Open http://localhost:8501 (Streamlit host)")
 procs[-1].wait()
-

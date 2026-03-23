@@ -1,15 +1,21 @@
-import logging
-import streamlit as st
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import json
+import logging
+import os
 import tempfile
 import uuid
 from datetime import datetime
-from utils.api_client import APIClient
-import utils.template_media as tm
-import os
-import time
 
-st.markdown("""
+import streamlit as st
+
+import utils.template_media as tm
+from utils.api_client import APIClient
+
+st.markdown(
+    """
 <style>
 .file-card {
     background: rgba(255,255,255,0.05);
@@ -23,9 +29,11 @@ st.markdown("""
     font-weight: 500;
 }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-logging.basicConfig(level=logging.INFO) 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -70,7 +78,9 @@ class SidebarManager:
 
         if "sysprompt" not in st.session_state:
             try:
-                with open(os.path.join("config","system_prompt.txt"), "r", encoding="utf-8") as f:
+                with open(
+                    os.path.join(os.getenv("CONFIG_DIR", "config"), "system_prompt.txt"), "r", encoding="utf-8"
+                ) as f:
                     st.session_state.sysprompt = f.read()
             except FileNotFoundError as e:
                 st.error("File not found!", e)
@@ -96,7 +106,7 @@ class SidebarManager:
                 self._render_recent_chats()
 
     def _render_settings(self):
-        with st.popover("", use_container_width=False, disabled=st.session_state.is_generating,icon="⚙️"):
+        with st.popover("", use_container_width=False, disabled=st.session_state.is_generating, icon="⚙️"):
             st.markdown("#### Settings")
 
             model_names = list(st.session_state.model_cfg.keys())
@@ -106,16 +116,13 @@ class SidebarManager:
                 default_index = model_names.index(st.session_state.model_name)
 
             selected_name = st.selectbox(
-                "Choose your model:",
-                model_names,
-                index=default_index,
-                disabled=st.session_state.is_generating
+                "Choose your model:", model_names, index=default_index, disabled=st.session_state.is_generating
             )
 
             # Check if model changed
-            model_changed = (st.session_state.model_name != selected_name)
+            model_changed = st.session_state.model_name != selected_name
             st.session_state.model_name = selected_name
-            
+
             cfg = st.session_state.model_cfg[selected_name]
             st.caption(cfg["purpose"])
 
@@ -131,12 +138,22 @@ class SidebarManager:
 
             # Parameter sliders
             st.session_state.temperature = st.slider(
-                "Temperature", 0.0, 2.0, st.session_state.temperature, step=0.1, disabled=st.session_state.is_generating,
-                help = "Controls how creative or deterministic the model is. Lower = focused, higher = more diverse."
+                "Temperature",
+                0.0,
+                2.0,
+                st.session_state.temperature,
+                step=0.1,
+                disabled=st.session_state.is_generating,
+                help="Controls how creative or deterministic the model is. Lower = focused, higher = more diverse.",
             )
             st.session_state.top_p = st.slider(
-                "Top-p", 0.0, 1.0, st.session_state.top_p, step=0.01, disabled=st.session_state.is_generating,
-                help="Limits choices to the most probable words whose combined probability is p. Lower = safer, higher = more varied."
+                "Top-p",
+                0.0,
+                1.0,
+                st.session_state.top_p,
+                step=0.01,
+                disabled=st.session_state.is_generating,
+                help="Limits choices to the most probable words whose combined probability is p. Lower = safer, higher = more varied.",
             )
             st.session_state.max_tokens = st.slider(
                 "Max tokens",
@@ -144,7 +161,7 @@ class SidebarManager:
                 st.session_state.context_length,
                 st.session_state.max_tokens,
                 disabled=st.session_state.is_generating,
-                help="Sets the maximum length of the model’s response."
+                help="Sets the maximum length of the model’s response.",
             )
             st.session_state.threshold = st.slider(
                 "Threshold",
@@ -153,19 +170,17 @@ class SidebarManager:
                 st.session_state.threshold,
                 step=0.1,
                 disabled=st.session_state.is_generating,
-                help="RAG Similarity Threshold (0–2): Determines how closely a document must match your query to be included. Higher = more documents (looser matching), lower = fewer but more relevant documents (stricter matching)."
+                help="RAG Similarity Threshold (0–2): Determines how closely a document must match your query to be included. Higher = more documents (looser matching), lower = fewer but more relevant documents (stricter matching).",
             )
 
     def _render_new_chat_button(self):
-        if st.button("### New Chat",icon="➕"):
+        if st.button("### New Chat", icon="➕"):
             self.start_new_conversation()
-    
+
     def _render_blobal_RAG(self):
         """Render RAG document upload section"""
         if not st.toggle(
-            "Activate RAG over whole account",
-            key="rag_active",  
-            value=st.session_state.get("rag_active", False)
+            "Activate RAG over whole account", key="rag_active", value=st.session_state.get("rag_active", False)
         ):
             return
 
@@ -175,36 +190,37 @@ class SidebarManager:
             st.caption("No recent chats yet")
         else:
             for chat in st.session_state.recent_chats[:5]:
-                if st.button(
-                    f"💬 {chat['title']}",
-                    key=f"chat_{chat['id']}",
-                    use_container_width=True
-                ):
-                    self.load_conversation(chat['id'])
+                if st.button(f"💬 {chat['title']}", key=f"chat_{chat['id']}", use_container_width=True):
+                    self.load_conversation(chat["id"])
 
     def start_new_conversation(self):
         if st.session_state.current_chat_id and len(st.session_state.messages) > 1:
             self.update_current_chat()
-        
-        st.session_state.messages = [
-            {"role": "assistant", "text": "Let's start chatting! 👇"}
-        ]
+
+        st.session_state.messages = [{"role": "assistant", "text": "Let's start chatting! 👇"}]
         st.session_state.current_chat_id = None
         st.rerun()
 
     def save_to_recents(self):
         mode = st.session_state.model_cfg[st.session_state.active_model_name].get("mode")
-        
+
         if len(st.session_state.messages) > 1:
             for msg in st.session_state.messages:
                 title = "New Chat"
                 if msg["role"] == "user":
                     title = msg["text"]
-                    if len(msg["text"].split())>10:
+                    if len(msg["text"].split()) > 10:
                         title = APIClient.generate(
-                        model_name=st.session_state.active_model_name,
-                        template=[{"role": "user", "content":[{"type":"text", "text":tm.title_prompt(msg["text"])}] if mode == "vlm" else tm.title_prompt(msg["text"])}],
-                        max_tokens=8,
+                            model_name=st.session_state.active_model_name,
+                            template=[
+                                {
+                                    "role": "user",
+                                    "content": [{"type": "text", "text": tm.title_prompt(msg["text"])}]
+                                    if mode == "vlm"
+                                    else tm.title_prompt(msg["text"]),
+                                }
+                            ],
+                            max_tokens=8,
                         )
                     break
 
@@ -234,29 +250,27 @@ class SidebarManager:
                 st.rerun()
                 break
 
+
 class ChatInterface:
     def __init__(self):
         if "messages" not in st.session_state:
-            st.session_state.messages = [
-                {"role": "assistant", "text": "What can I help with?"}
-            ]
+            st.session_state.messages = [{"role": "assistant", "text": "What can I help with?"}]
 
     def _render_header(self):
         st.markdown(
             """
             <h1 style='text-align: center;'>💬 Yaghmo's chatbot</h1>
             <p style='text-align: center; color: gray;'>
-                Note that this demo app is actually connected to a Language Model. 
+                Note that this demo app is actually connected to a Language Model.
                 Choose which one you would want to use in the settings.
             </p>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
     def _render_chat_history(self):
         for message in st.session_state.messages:
             with st.chat_message(message.get("role", "assistant")):
-
                 medias = message.get("medias", [])
                 docs = message.get("docs", [])
 
@@ -268,20 +282,19 @@ class ChatInterface:
 
                 st.markdown(message.get("text", ""))
 
-
     def _save_current_chat_to_recents(self):
         """Save or update current chat in recents list"""
-        
+
         if not st.session_state.current_chat_id:
             return
-        
+
         # Check if chat already exists in recents
         existing_chat = None
         for chat in st.session_state.recent_chats:
             if chat["id"] == st.session_state.current_chat_id:
                 existing_chat = chat
                 break
-        
+
         if existing_chat:
             # Update existing chat
             existing_chat["messages"] = st.session_state.messages.copy()
@@ -289,46 +302,73 @@ class ChatInterface:
         else:
             # Create new chat in recents
             mode = st.session_state.model_cfg[st.session_state.active_model_name].get("mode")
-            
+
             # Generate title from first user message
             title = "New Chat"
             for msg in st.session_state.messages:
                 if msg["role"] == "user":
                     title = msg["text"]
-                    if len(msg["text"].split())>10:
+                    if len(msg["text"].split()) > 10:
                         title = APIClient.generate(
                             model_name=st.session_state.active_model_name,
-                            template=[{
-                                "role": "user", 
-                                "content": [{"type":"text", "text":tm.title_prompt(msg["text"])}] if mode == "vlm" else tm.title_prompt(msg["text"])
-                            }],
-                            max_tokens = 8,
+                            template=[
+                                {
+                                    "role": "user",
+                                    "content": [{"type": "text", "text": tm.title_prompt(msg["text"])}]
+                                    if mode == "vlm"
+                                    else tm.title_prompt(msg["text"]),
+                                }
+                            ],
+                            max_tokens=8,
                         )
                     break
-            
+
             chat_data = {
                 "id": st.session_state.current_chat_id,
                 "title": title,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "messages": st.session_state.messages.copy()
+                "messages": st.session_state.messages.copy(),
             }
             st.session_state.recent_chats.insert(0, chat_data)
 
     def _render_chat_input(self):
         ALLOWED_EXTENSIONS = [
-        # images
-        "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff",
-        # videos
-        "mp4", "mov", "avi", "mkv", "webm",
-        # documents
-        'txt', 'md', 'pdf', 'docx', 'doc', 'xlsx', 'xls', 'csv', 'pptx', 'ppt', 'json', 'html', 'htm', 'rtf'
+            # images
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "bmp",
+            "webp",
+            "tiff",
+            # videos
+            "mp4",
+            "mov",
+            "avi",
+            "mkv",
+            "webm",
+            # documents
+            "txt",
+            "md",
+            "pdf",
+            "docx",
+            "doc",
+            "xlsx",
+            "xls",
+            "csv",
+            "pptx",
+            "ppt",
+            "json",
+            "html",
+            "htm",
+            "rtf",
         ]
         if prompt := st.chat_input(
             "Ask anything",
             accept_audio=True,
             accept_file="multiple",
             file_type=ALLOWED_EXTENSIONS,
-            ):
+        ):
             self._handle_user_message(prompt)
 
     def _display_files_as_cards(self, medias=None, docs=None, max_preview=3):
@@ -344,7 +384,7 @@ class ChatInterface:
                     with col:
                         media_type = media.type.split("/")[0]
                         if media_type == "image":
-                            st.image(media, width='stretch')
+                            st.image(media, width="stretch")
                         elif media_type == "video":
                             st.video(media)
                         else:
@@ -356,7 +396,7 @@ class ChatInterface:
                         st.markdown(f"**{media.name}**")
                         media_type = media.type.split("/")[0]
                         if media_type == "image":
-                            st.image(media, width='stretch')
+                            st.image(media, width="stretch")
                         elif media_type == "video":
                             st.video(media)
 
@@ -365,10 +405,10 @@ class ChatInterface:
                     st.divider()
                 st.caption("Documents")
                 for file in docs:
-                    st.markdown(f"📄 {file.rsplit('_', 2)[0] }")
+                    st.markdown(f"📄 {file.rsplit('_', 2)[0]}")
 
     def _handle_user_message(self, prompt):
-        
+
         if not st.session_state.current_chat_id:
             st.session_state.current_chat_id = str(uuid.uuid4())
 
@@ -379,7 +419,6 @@ class ChatInterface:
         doc_files = []
         prompt_docs = []
         vlm_content = []
-        documents = []
         text_doc = ""
         message_placeholder = st.empty()
 
@@ -391,59 +430,65 @@ class ChatInterface:
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
                 f.write(prompt.audio.read())
                 temp_path = f.name
-            text_content = APIClient.transcribe(audio_path = temp_path)
+            text_content = APIClient.transcribe(audio_path=temp_path)
             st.session_state.list_of_path.append(temp_path)
             message_placeholder.empty()
 
         content = text_content
         if prompt.files:
-            media_files = [
-                f for f in prompt.files
-                if f.type and f.type.startswith(("image", "video"))
-            ]
+            media_files = [f for f in prompt.files if f.type and f.type.startswith(("image", "video"))]
             doc_files = [f for f in prompt.files if f not in media_files]
             if media_files:
                 if mode == "vlm":
                     message_placeholder.markdown("*Analysing medias...*")
                     for file in media_files:
                         temp_path, media_type = tm.media_resize(file=file)
-                        vlm_content.append({
-                            "type": media_type,
-                            media_type: temp_path
-                        })
+                        vlm_content.append({"type": media_type, media_type: temp_path})
                         st.session_state.list_of_path.append(temp_path)
                 else:
-                    st.toast(f"⚠️ {len(media_files)} media file(s) detected but current model doesn't support vision. Please select a VLM for such feature.",duration = "long")
+                    st.toast(
+                        f"⚠️ {len(media_files)} media file(s) detected but current model doesn't support vision. Please select a VLM for such feature.",
+                        duration="long",
+                    )
             message_placeholder.empty()
             if doc_files:
                 message_placeholder.markdown("*Analysing documents...*")
                 for file in doc_files:
                     text_doc = tm.extract_text_from_file(file)
                     all_doc = list(set(prompt_docs + st.session_state.rag_docs))
-                    is_sim = APIClient.check_sim(model_name=st.session_state.active_model_name,user="user",all_doc = all_doc, text_doc = text_doc)
+                    is_sim = APIClient.check_sim(
+                        model_name=st.session_state.active_model_name, user="user", all_doc=all_doc, text_doc=text_doc
+                    )
 
                     if text_doc and not is_sim:
                         introduction = text_doc[:3000]
                         summary = APIClient.generate(
                             model_name=st.session_state.active_model_name,
-                            template=[{"role": "user", "content":[{"type":"text", "text":tm.summary_prompt(introduction)}] if mode == "vlm" else tm.summary_prompt(introduction)}],
+                            template=[
+                                {
+                                    "role": "user",
+                                    "content": [{"type": "text", "text": tm.summary_prompt(introduction)}]
+                                    if mode == "vlm"
+                                    else tm.summary_prompt(introduction),
+                                }
+                            ],
                             max_tokens=300,
                         )
 
-                        doc_id = APIClient.add_document(user = "user",
-                            chat_id = st.session_state.current_chat_id,
-                            file_name = file.name,
-                            summary = summary,
-                            content = text_doc,
-                            model_name= st.session_state.active_model_name,
-                            )
+                        doc_id = APIClient.add_document(
+                            user="user",
+                            chat_id=st.session_state.current_chat_id,
+                            file_name=file.name,
+                            summary=summary,
+                            content=text_doc,
+                            model_name=st.session_state.active_model_name,
+                        )
                         prompt_docs.append(doc_id)
                     elif not text_doc:
-                        st.toast(f"⚠️ Some documents contain no text (scans, empty, etc.)")
-                if len(prompt_docs)!=len(doc_files):
-                    st.toast(f"⚠️ Some documents are no saved for being identical with some others.")
+                        st.toast("⚠️ Some documents contain no text (scans, empty, etc.)")
+                if len(prompt_docs) != len(doc_files):
+                    st.toast("⚠️ Some documents are no saved for being identical with some others.")
 
-                
         st.session_state.rag_docs.extend(prompt_docs)
         if st.session_state.rag_docs:
             relevent_chunks = APIClient.rag_query(
@@ -451,28 +496,33 @@ class ChatInterface:
                 chat_docs=st.session_state.rag_docs,
                 query=text_content,
                 top_n=5,
-                threshold = 0.2,
+                threshold=0.17,
             )
             logger.info(f"Relevent chunks : {relevent_chunks}")
 
-            if len(relevent_chunks)>0:
+            if len(relevent_chunks) > 0:
                 content = tm.make_rag_query(text_content, relevent_chunks)
-        
+
         message_placeholder.empty()
-        
+
         vlm_content.append({"type": "text", "text": content})
 
         # check for history
-        st.session_state.current_messages = tm.summarize_history(messages=st.session_state.current_messages,mode = mode, model_name=model_name, max_window_size= int(st.session_state.context_length*0.69))
-        
+        st.session_state.current_messages = tm.summarize_history(
+            messages=st.session_state.current_messages,
+            mode=mode,
+            model_name=model_name,
+            max_window_size=int(st.session_state.context_length * 0.69),
+        )
+
         message = {
-        "role": "user",
-        "text": text_content,
-        "content": content,
-        "vlm_content": vlm_content,
-        "medias": media_files,
-        "audio": prompt.audio or None,
-        "docs": prompt_docs, 
+            "role": "user",
+            "text": text_content,
+            "content": content,
+            "vlm_content": vlm_content,
+            "medias": media_files,
+            "audio": prompt.audio or None,
+            "docs": prompt_docs,
         }
 
         st.session_state.messages.append(message)
@@ -480,7 +530,7 @@ class ChatInterface:
 
         with st.chat_message("user"):
             if any(file in message for file in ("medias", "docs")):
-                self._display_files_as_cards(medias=message["medias"],docs=message["docs"])
+                self._display_files_as_cards(medias=message["medias"], docs=message["docs"])
             if prompt.audio:
                 st.audio(prompt.audio)
                 st.markdown(text_content)
@@ -489,17 +539,21 @@ class ChatInterface:
         self._save_current_chat_to_recents()
 
         with st.chat_message("assistant"):
-            template = tm.build_prompt_template(messages=st.session_state.current_messages,mode=mode,system_prompt=st.session_state.sysprompt)
+            template = tm.build_prompt_template(
+                messages=st.session_state.current_messages, mode=mode, system_prompt=st.session_state.sysprompt
+            )
             response = self._generate_response(template)
             # response = content
-            tm.clear_temp(list_of_path= st.session_state.list_of_path)
+            tm.clear_temp(list_of_path=st.session_state.list_of_path)
 
-        st.session_state.messages.append({
-            "role": "assistant",
-            "vlm_content": [{"type": "text", "text": response}],
-            "content": response,
-            "text": response
-        })
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "vlm_content": [{"type": "text", "text": response}],
+                "content": response,
+                "text": response,
+            }
+        )
 
         st.session_state.current_messages.append(st.session_state.messages[-1])
         self._save_current_chat_to_recents()
@@ -509,7 +563,7 @@ class ChatInterface:
         if not st.session_state.active_model_name:
             st.error("Please select and load a model first!")
             return "Model not loaded."
-        
+
         message_placeholder = st.empty()
         message_placeholder.markdown("*Thinking...*")
         full_response = ""
@@ -525,15 +579,14 @@ class ChatInterface:
                 template=template,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                top_p=top_p
+                top_p=top_p,
             ):
-                
                 full_response += token
                 message_placeholder.markdown(full_response)
-            
+
             message_placeholder.markdown(full_response)
             return full_response
-        
+
         finally:
             st.session_state.is_generating = False
 
@@ -542,20 +595,18 @@ class ChatInterface:
         self._render_chat_history()
         self._render_chat_input()
 
+
 class ChatbotApp:
-    def __init__(self, cfg_file: str = os.path.join("config","model_cfg.json")):
+    def __init__(self, cfg_file: str = os.getenv("MODEL_CONFIG", os.path.join("config", "model_cfg.json"))):
         self.sidebar = SidebarManager(cfg_file)
         self.chat = ChatInterface()
 
     def run(self):
-        st.set_page_config(
-            page_title="Yaghmood's Chatbot",
-            page_icon="💬",
-            layout="wide"
-        )
+        st.set_page_config(page_title="Yaghmood's Chatbot", page_icon="💬", layout="wide")
 
         self.chat.render()
         self.sidebar.render()
+
 
 if __name__ == "__main__":
     app = ChatbotApp()

@@ -1,0 +1,12 @@
+{
+    "embedding": {
+        "model_name": "intfloat/multilingual-e5-small",
+        "device": "cpu",
+        "purpose": "Multilingual sentence embeddings for RAG retrieval"
+    },
+    "stt": {
+        "model_name": "Zoont/faster-whisper-large-v3-turbo-int8-ct2",
+        "device": "cpu",
+        "purpose": "Speech-to-text transcription with VAD filtering"
+    }
+}

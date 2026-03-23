@@ -9,6 +9,13 @@ import tempfile
 import uuid
 from datetime import datetime
 
+_ALLOWED_EXTENSIONS = [
+    "png", "jpg", "jpeg", "gif", "bmp", "webp", "tiff",
+    "mp4", "mov", "avi", "mkv", "webm",
+    "txt", "md", "pdf", "docx", "doc", "xlsx", "xls",
+    "csv", "pptx", "ppt", "json", "html", "htm", "rtf",
+]
+
 import streamlit as st
 
 import utils.template_media as tm
@@ -177,13 +184,6 @@ class SidebarManager:
         if st.button("### New Chat", icon="➕"):
             self.start_new_conversation()
 
-    def _render_blobal_RAG(self):
-        """Render RAG document upload section"""
-        if not st.toggle(
-            "Activate RAG over whole account", key="rag_active", value=st.session_state.get("rag_active", False)
-        ):
-            return
-
     def _render_recent_chats(self):
         st.markdown("### Recent Chats")
         if not st.session_state.recent_chats:
@@ -200,39 +200,6 @@ class SidebarManager:
         st.session_state.messages = [{"role": "assistant", "text": "Let's start chatting! 👇"}]
         st.session_state.current_chat_id = None
         st.rerun()
-
-    def save_to_recents(self):
-        mode = st.session_state.model_cfg[st.session_state.active_model_name].get("mode")
-
-        if len(st.session_state.messages) > 1:
-            for msg in st.session_state.messages:
-                title = "New Chat"
-                if msg["role"] == "user":
-                    title = msg["text"]
-                    if len(msg["text"].split()) > 10:
-                        title = APIClient.generate(
-                            model_name=st.session_state.active_model_name,
-                            template=[
-                                {
-                                    "role": "user",
-                                    "content": [{"type": "text", "text": tm.title_prompt(msg["text"])}]
-                                    if mode == "vlm"
-                                    else tm.title_prompt(msg["text"]),
-                                }
-                            ],
-                            max_tokens=8,
-                        )
-                    break
-
-            chat_id = str(uuid.uuid4())
-            chat_data = {
-                "id": chat_id,
-                "title": title,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "messages": st.session_state.messages.copy(),
-            }
-            st.session_state.recent_chats.insert(0, chat_data)
-            st.session_state.current_chat_id = chat_id
 
     def update_current_chat(self):
         if st.session_state.current_chat_id:
@@ -332,47 +299,16 @@ class ChatInterface:
             st.session_state.recent_chats.insert(0, chat_data)
 
     def _render_chat_input(self):
-        ALLOWED_EXTENSIONS = [
-            # images
-            "png",
-            "jpg",
-            "jpeg",
-            "gif",
-            "bmp",
-            "webp",
-            "tiff",
-            # videos
-            "mp4",
-            "mov",
-            "avi",
-            "mkv",
-            "webm",
-            # documents
-            "txt",
-            "md",
-            "pdf",
-            "docx",
-            "doc",
-            "xlsx",
-            "xls",
-            "csv",
-            "pptx",
-            "ppt",
-            "json",
-            "html",
-            "htm",
-            "rtf",
-        ]
         if prompt := st.chat_input(
             "Ask anything",
             accept_audio=True,
             accept_file="multiple",
-            file_type=ALLOWED_EXTENSIONS,
+            file_type=_ALLOWED_EXTENSIONS,
         ):
             self._handle_user_message(prompt)
 
     def _display_files_as_cards(self, medias=None, docs=None, max_preview=3):
-        main_col, right_col = st.columns([5, 2])
+        _, right_col = st.columns([5, 2])
 
         with right_col:
             preview_medias = medias[:max_preview]
@@ -434,16 +370,14 @@ class ChatInterface:
                 st.audio(prompt.audio)
             st.markdown(text_content or "*Processing audio...*")
 
-        # Show thinking immediately — replaced with actual stream once ready
-        assistant_placeholder = st.empty()
-        with assistant_placeholder.chat_message("assistant"):
-            st.markdown("*Thinking...*")
-
         # ── Heavy processing (audio, media, docs, RAG) ───────────────────────
-        status = st.empty()
+        def set_status(text: str):
+            assistant_placeholder.chat_message("assistant").markdown(text)
+
+        assistant_placeholder = st.empty()
 
         if prompt.audio:
-            status.markdown("*Transcribing audio...*")
+            set_status("*Transcribing audio...*")
             suffix = os.path.splitext(prompt.audio.name)[1] or ".wav"
             prompt.audio.seek(0)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
@@ -458,7 +392,7 @@ class ChatInterface:
             doc_files = [f for f in prompt.files if f not in media_files]
             if media_files:
                 if mode == "vlm":
-                    status.markdown("*Analysing media...*")
+                    set_status("*Analysing media...*")
                     for file in media_files:
                         temp_path, media_type = tm.media_resize(file=file)
                         vlm_content.append({"type": media_type, media_type: temp_path})
@@ -469,7 +403,7 @@ class ChatInterface:
                         duration="long",
                     )
             if doc_files:
-                status.markdown("*Analysing documents...*")
+                set_status("*Analysing documents...*")
                 for file in doc_files:
                     text_doc = tm.extract_text_from_file(file)
                     all_doc = list(set(prompt_docs + st.session_state.rag_docs))
@@ -506,7 +440,7 @@ class ChatInterface:
 
         st.session_state.rag_docs.extend(prompt_docs)
         if st.session_state.rag_docs:
-            status.markdown("*Searching documents...*")
+            set_status("*Searching documents...*")
             relevent_chunks = APIClient.rag_query(
                 user="user",
                 chat_docs=st.session_state.rag_docs,
@@ -518,7 +452,7 @@ class ChatInterface:
             if len(relevent_chunks) > 0:
                 content = tm.make_rag_query(text_content, relevent_chunks)
 
-        status.empty()
+        set_status("*Thinking...*")
 
         vlm_content.append({"type": "text", "text": content})
 

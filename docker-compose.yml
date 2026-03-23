@@ -1,0 +1,22 @@
+services:
+  chatbot:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8501:8501"
+    volumes:
+      - ./models:/app/models
+      - chatbot_outputs:/app/outputs
+      - ./.env:/app/.env:ro
+      - ./config:/app/config
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  chatbot_outputs:

@@ -1,7 +1,16 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+_models_dir = os.path.abspath(os.getenv("MODELS_DIR", "models"))
+os.environ["HF_HOME"] = os.path.join(_models_dir, ".cache", "huggingface")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+
 import asyncio
 import json
 import logging
-import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional, Union
 
@@ -10,14 +19,11 @@ import torch
 import uvicorn
 from chromadb.config import Settings
 from chromadb.utils import embedding_functions
-from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from faster_whisper import WhisperModel
 from pydantic import BaseModel
-
-load_dotenv()  # must be before local imports so HF_HOME is set in time
 
 from utils.model import Model  # noqa: E402
 from utils.template_media import extract_keywords, hierarchical_retrieval, similarity_matching  # noqa: E402

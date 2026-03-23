@@ -408,7 +408,6 @@ class ChatInterface:
                     st.markdown(f"📄 {file.rsplit('_', 2)[0]}")
 
     def _handle_user_message(self, prompt):
-
         if not st.session_state.current_chat_id:
             st.session_state.current_chat_id = str(uuid.uuid4())
 
@@ -420,19 +419,38 @@ class ChatInterface:
         prompt_docs = []
         vlm_content = []
         text_doc = ""
-        message_placeholder = st.empty()
+
+        # ── Show user message immediately before any processing ──────────────
+        with st.chat_message("user"):
+            if prompt.files:
+                preview_media = [f for f in prompt.files if f.type and f.type.startswith(("image", "video"))]
+                preview_docs = [f for f in prompt.files if f not in preview_media]
+                if preview_media or preview_docs:
+                    self._display_files_as_cards(
+                        medias=preview_media,
+                        docs=[f.name for f in preview_docs],
+                    )
+            if prompt.audio:
+                st.audio(prompt.audio)
+            st.markdown(text_content or "*Processing audio...*")
+
+        # Show thinking immediately — replaced with actual stream once ready
+        assistant_placeholder = st.empty()
+        with assistant_placeholder.chat_message("assistant"):
+            st.markdown("*Thinking...*")
+
+        # ── Heavy processing (audio, media, docs, RAG) ───────────────────────
+        status = st.empty()
 
         if prompt.audio:
-            message_placeholder = st.markdown("*Processing audio...*")
+            status.markdown("*Transcribing audio...*")
             suffix = os.path.splitext(prompt.audio.name)[1] or ".wav"
             prompt.audio.seek(0)
-
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
                 f.write(prompt.audio.read())
                 temp_path = f.name
             text_content = APIClient.transcribe(audio_path=temp_path)
             st.session_state.list_of_path.append(temp_path)
-            message_placeholder.empty()
 
         content = text_content
         if prompt.files:
@@ -440,7 +458,7 @@ class ChatInterface:
             doc_files = [f for f in prompt.files if f not in media_files]
             if media_files:
                 if mode == "vlm":
-                    message_placeholder.markdown("*Analysing medias...*")
+                    status.markdown("*Analysing media...*")
                     for file in media_files:
                         temp_path, media_type = tm.media_resize(file=file)
                         vlm_content.append({"type": media_type, media_type: temp_path})
@@ -450,16 +468,14 @@ class ChatInterface:
                         f"⚠️ {len(media_files)} media file(s) detected but current model doesn't support vision. Please select a VLM for such feature.",
                         duration="long",
                     )
-            message_placeholder.empty()
             if doc_files:
-                message_placeholder.markdown("*Analysing documents...*")
+                status.markdown("*Analysing documents...*")
                 for file in doc_files:
                     text_doc = tm.extract_text_from_file(file)
                     all_doc = list(set(prompt_docs + st.session_state.rag_docs))
                     is_sim = APIClient.check_sim(
                         model_name=st.session_state.active_model_name, user="user", all_doc=all_doc, text_doc=text_doc
                     )
-
                     if text_doc and not is_sim:
                         introduction = text_doc[:3000]
                         summary = APIClient.generate(
@@ -474,7 +490,6 @@ class ChatInterface:
                             ],
                             max_tokens=300,
                         )
-
                         doc_id = APIClient.add_document(
                             user="user",
                             chat_id=st.session_state.current_chat_id,
@@ -487,10 +502,11 @@ class ChatInterface:
                     elif not text_doc:
                         st.toast("⚠️ Some documents contain no text (scans, empty, etc.)")
                 if len(prompt_docs) != len(doc_files):
-                    st.toast("⚠️ Some documents are no saved for being identical with some others.")
+                    st.toast("⚠️ Some documents are not saved for being identical with some others.")
 
         st.session_state.rag_docs.extend(prompt_docs)
         if st.session_state.rag_docs:
+            status.markdown("*Searching documents...*")
             relevent_chunks = APIClient.rag_query(
                 user="user",
                 chat_docs=st.session_state.rag_docs,
@@ -499,15 +515,13 @@ class ChatInterface:
                 threshold=0.17,
             )
             logger.info(f"Relevent chunks : {relevent_chunks}")
-
             if len(relevent_chunks) > 0:
                 content = tm.make_rag_query(text_content, relevent_chunks)
 
-        message_placeholder.empty()
+        status.empty()
 
         vlm_content.append({"type": "text", "text": content})
 
-        # check for history
         st.session_state.current_messages = tm.summarize_history(
             messages=st.session_state.current_messages,
             mode=mode,
@@ -524,26 +538,16 @@ class ChatInterface:
             "audio": prompt.audio or None,
             "docs": prompt_docs,
         }
-
         st.session_state.messages.append(message)
         st.session_state.current_messages.append(message)
-
-        with st.chat_message("user"):
-            if any(file in message for file in ("medias", "docs")):
-                self._display_files_as_cards(medias=message["medias"], docs=message["docs"])
-            if prompt.audio:
-                st.audio(prompt.audio)
-                st.markdown(text_content)
-            else:
-                st.markdown(text_content)
         self._save_current_chat_to_recents()
 
+        assistant_placeholder.empty()
         with st.chat_message("assistant"):
             template = tm.build_prompt_template(
                 messages=st.session_state.current_messages, mode=mode, system_prompt=st.session_state.sysprompt
             )
             response = self._generate_response(template)
-            # response = content
             tm.clear_temp(list_of_path=st.session_state.list_of_path)
 
         st.session_state.messages.append(
@@ -554,7 +558,6 @@ class ChatInterface:
                 "text": response,
             }
         )
-
         st.session_state.current_messages.append(st.session_state.messages[-1])
         self._save_current_chat_to_recents()
         st.rerun()

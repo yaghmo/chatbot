@@ -16,7 +16,10 @@ from ctransformers import AutoModelForCausalLM
 from huggingface_hub import HfApi, hf_hub_download, hf_hub_url
 from transformers import AutoProcessor, AutoTokenizer, Qwen3VLForConditionalGeneration
 
-MODELS_DIR = os.getenv("MODELS_DIR", "models")
+MODELS_DIR = os.path.abspath(os.getenv("MODELS_DIR", "models"))
+
+os.environ["HF_HOME"] = os.path.join(MODELS_DIR, ".cache", "huggingface")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")  # suppress Windows symlink noise
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -101,7 +104,7 @@ class Model:
             logger.exception(f"Error accessing repository: {e}")
 
         if self.cfg.get("format") == "gguf":
-            sizes = [os.path.getsize(os.path.join("models", self.cfg.get("file_name")))]
+            sizes = [os.path.getsize(os.path.join(MODELS_DIR, self.cfg.get("file_name")))]
         else:
             sizes = [self._get_file_size_from_url(f) for f in repo_files if f.endswith(self.cfg.get("format"))]
             logger.info(f"repos :{repo_files}")
@@ -180,11 +183,11 @@ class Model:
     def _ctransformers(self):
         if self.size == 0:
             self._get_model()
-        MODEL_PATH = os.path.join(MODELS_DIR, self.cfg["file_name"])
+        model_path = os.path.join(MODELS_DIR, self.cfg["file_name"])
 
         gpu_layers = 0 if self._device == "cpu" else 100
         self._model = AutoModelForCausalLM.from_pretrained(
-            MODEL_PATH, model_type=self.cfg["type"], gpu_layers=gpu_layers, context_length=self.cfg["context_length"]
+            model_path, model_type=self.cfg["type"], gpu_layers=gpu_layers, context_length=self.cfg["context_length"]
         )
         logger.info(f"Model loaded: {self.model_name}")
 
